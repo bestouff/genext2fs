@@ -1440,10 +1440,6 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 		}
 		else
 		{
-			if(squash_uids)
-				uid = gid = 0;
-			if(squash_perms)
-				mode &= ~(FM_IRWXG | FM_IRWXO);
 			mode &= FM_IMASK;
 			path2 = strdup(path);
 			name = basename(path);
