@@ -10,8 +10,9 @@ dtest () {
 	mkdir -p test
 	cd test
 	dd if=/dev/zero of=file.$1 bs=1 count=$size 
+	touch -t 200502070321.43 file.$1 .
 	cd ..
-	./genext2fs -b $blocks -d test ext2.img 
+	./genext2fs -b $blocks -d test -t 1107706903 ext2.img 
 	md5=`md5sum ext2.img | cut -d" " -f1`
 	rm -rf ext2.img test
 	if [ $md5 == $checksum ] ; then
@@ -29,7 +30,7 @@ dtest () {
 ftest () {
 	fname=$1; blocks=$2; checksum=$3
 	echo "Testing with devices file $fname"
-	./genext2fs -b $blocks -f $fname ext2.img
+	./genext2fs -b $blocks -f $fname -t 0 ext2.img
 	md5=`md5sum ext2.img | cut -d" " -f1`
 	rm -rf ext2.img
 	if [ $md5 == $checksum ] ; then
@@ -40,14 +41,15 @@ ftest () {
 	fi
 }
 
-dtest 0 4096 491a43ab93c2e5c186c9f1f72d88e5c5
-dtest 0 8193 6289224f0b7f151994479ba156c43505
-dtest 0 8194 3272c43c25e8d0c3768935861a643a65
-dtest 1 4096 5ee24486d33af88c63080b09d8cadfb5
-dtest 12288 4096 494498364defdc27b2770d1f9c1e3387
-dtest 274432 4096 65c4bd8d30bf563fa5434119a12abff1
-dtest 8388608 9000 9a49b0461ee236b7fd7c452fb6a1f2dc
-dtest 16777216 20000 91e16429c901b68d30f783263f0611b7
+dtest 0 4096 baa6525d94a8e58b0bc38af7f6ca913b
+dtest 0 8193 98a1696b085289ddec8ea3b28e15adbe
+dtest 0 8194 464546452a531af4d46733edb902c5d2
+dtest 1 4096 36dcf89dbc9ca415ed20746d81985289
+dtest 12288 4096 1cb3cb993f559b11c644c8fe71110390
+dtest 274432 4096 7745a68a08762f87223d1f6e97848d89
+dtest 8388608 9000 333252327a182006372ba64a0ce7f8fb
+dtest 16777216 20000 55a7e7878b1c43b0e051f2e418838698
 
-ftest dev.txt 4096 921ee9343b0759e16ad8d979d7dd16ec
+ftest device_table.txt 4096 d04dbf1f872b99254876416da07e83c9
+
 exit 0
