@@ -1,0 +1,5 @@
+AC_INIT(genext2fs.c)
+AM_INIT_AUTOMAKE(genext2fs,1.3)
+AC_PROG_CC
+AC_PROG_INSTALL
+AC_OUTPUT(Makefile)
