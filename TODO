@@ -8,3 +8,4 @@ Disclaimer: I'll probably never do all this ...
 - find a better way to guess filesystem's size
 
 - UUID generation
+- provide alternatives to glibc-specific library calls like getline()
