@@ -2319,8 +2319,6 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 	while((c = getopt_long(argc, argv, "x:d:D:f:b:i:r:g:qUPt:e:zvh", longopts, NULL)) != EOF) {
-printf ("case char: %c\n", c) ;
-printf ("optarg: %s\n", optarg) ;
 		switch(c)
 		{
 			case 'x':
