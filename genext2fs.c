@@ -2247,21 +2247,28 @@ showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
-	"  -x image         Use this image as the starting point\n"
-	"  -d directory     Add this directory as a source\n"
-	"  -b blocks        Size in blocks\n"
-	"  -i inodes        Number of inodes\n"
-	"  -r reserved      Number of reserved blocks\n"
-	"  -g path          Generate a block map file for this path\n"
-	"  -e value         Fill unallocated blocks with value\n"
-	"  -z               Make files with holes\n"
-	"  -D,-f spec-file  Use spec-file to add or modify particular inodes\n"
-	"  -q               Squash permissions and owners making all files be owned by root\n"
-	"  -U               Squash owners making all files be owned by root\n"
-	"  -P               Squash permissions on all files\n"
-	"  -t seconds       Timestamp for filesystem and inode creation\n"
-	"  -v               Print resulting filesystem structure\n"
-	"  -h               Show this help\n\n"
+	"  -x, --starting-image <image>\n"
+	"  -d, --source-directory <directory>\n"
+	"  -D, -f, --inode-table-file <file>\n"
+	"  -b, --size-in-blocks <blocks>\n"
+	"  -i, --number-of-inodes <number of inodes>\n"
+	"  -r, --reserved-blocks <number of reserved blocks>\n"
+	"  -g, --block-map-file <path>\n"
+	"	Generate a block map file for this path.\n"
+	"  -e, --fill-value <value>\n"
+	"	Fill unallocated blocks with value.\n"
+	"  -z, --allow-holes\n"
+	"	Allow files with holes.\n"
+	"  -q, --squash-all\n"
+	"	Squash permissions and owners making all files be owned by root.\n"
+	"  -U, --squash-uids\n"
+	"	Squash owners making all files be owned by root.\n"
+	"  -P, --squash-perms\n"
+	"	Squash permissions on all files.\n"
+	"  -t, --timestamp <value>\n"
+	"	Timestamp for filesystem and inode creation in seconds.\n"
+	"  -v, --verbose\n"
+	"  -h, --help\n\n"
 	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
 }
 
@@ -2300,8 +2307,27 @@ main(int argc, char **argv)
 	int c;
 	struct stats stats;
 
+	struct option longopts[] = {
+	  { "starting-image",	required_argument,	NULL, 'x' },
+	  { "source-directory",	required_argument,	NULL, 'd' },
+	  { "inode-table-file",	required_argument,	NULL, 'f' },
+	  { "size-in-blocks",	required_argument,	NULL, 'b' },
+	  { "number-of-inodes",	required_argument,	NULL, 'i' },
+	  { "reserved-blocks",	required_argument,	NULL, 'r' },
+	  { "block-map-file",	required_argument,	NULL, 'g' },
+	  { "squash-all",	no_argument,		NULL, 'q' },
+	  { "squash-uids",	no_argument,		NULL, 'U' },
+	  { "squash-perms",	no_argument,		NULL, 'P' },
+	  { "timestamp",	required_argument,	NULL, 't' },
+	  { "fill-value",	required_argument,	NULL, 'e' },
+	  { "allow-holes",	no_argument, 		&holes, 1 },
+	  { "verbose",		no_argument,		&verbose, 1 },
+	  { "help",		no_argument,		NULL, 'h' },
+	  { 0, 0, 0, 0}
+	} ;
+
 	app_name = argv[0];
-	while((c = getopt(argc, argv, "x:d:b:i:r:g:e:zvhD:f:qUPt:")) != EOF)
+	while((c = getopt_long(argc, argv, "x:d:D:f:b:i:r:g:qUPt:e:zvh", longopts, NULL)) != EOF) {
 		switch(c)
 		{
 			case 'x':
@@ -2352,6 +2378,7 @@ main(int argc, char **argv)
 			default:
 				exit(1);
 		}
+	}
 
 	if(optind < (argc - 1))
 		error_msg_and_die("too many arguments");
