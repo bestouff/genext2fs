@@ -991,14 +991,12 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	if(nblk <= EXT2_IND_BLOCK)
 		return;
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
-	//nod->i_block[EXT2_IND_BLOCK] = swab32(nod->i_block[EXT2_IND_BLOCK]);
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
 		return;
 	for(i = 0; i < BLOCKSIZE/4; i++)
 		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + i)
 			swap_block(get_blk(fs, ((uint32*)get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]))[i]));
 	swap_block(get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]));
-	//nod->i_block[EXT2_DIND_BLOCK] = swab32(nod->i_block[EXT2_DIND_BLOCK]);
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
 		return;
 	errexit("too big file on the filesystem");
