@@ -1,0 +1,5 @@
+To install, just do it the normal GNU way:
+
+./configure
+make
+sudo make install
