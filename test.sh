@@ -15,9 +15,10 @@ dtest () {
 	else
 		dd if=/dev/zero of=file.$1 bs=$size count=1 2>/dev/null
 	fi
+	chmod 777 file.$1
 	touch -t 200502070321.43 file.$1 .
 	cd ..
-	./genext2fs -b $blocks -d test -t 1107706903 ext2.img 
+	./genext2fs -b $blocks -d test -t 1107706903 -q ext2.img 
 	md5=`md5sum ext2.img | cut -d" " -f1`
 	rm -rf ext2.img test
 	if [ $md5 == $checksum ] ; then
@@ -46,15 +47,13 @@ ftest () {
 	fi
 }
 
-dtest 0 4096 799c5b5747a81d547af083bb904c268a
-dtest 0 8193 19dfadad2271da9c22509941616f6648
-dtest 0 8194 551716fcddeb8547e6b42dfa9ad338d5
-dtest 1 4096 596ae7c65ea2e76dcd6ce47d31858396
-dtest 12288 4096 b6e4a1fc13141ac642d03d5f71595ab5
-dtest 274432 4096 e5d74b0a2547b328b81ed61267f88827
-dtest 8388608 9000 8043fdf8f1888d2547e49c2de6d6bb10
-dtest 16777216 20000 d0f9492a8eccf1aa7119c7b5f854cc6c
+dtest 0 4096 63900fd66725bbe66bfa926acee760fe
+dtest 0 8193 bc71dd5ac7ccf497d7ffb0f60f4be92b
+dtest 0 8194 739fabefde5873ea5ae531fc76377a5e
+dtest 1 4096 224a3b8468b7978dc82032445a5629d2
+dtest 12288 4096 79f19ace9683a0b7192d95a17bf95f34
+dtest 274432 4096 a873dbcd6efa6837e1767e495f98d1f5
+dtest 8388608 9000 f1ae7f8c37418a8e902fbcfc24595fec
+dtest 16777216 20000 367e6f6de52c6c73ad487ab0588c9064
 
 ftest device_table.txt 4096 d04dbf1f872b99254876416da07e83c9
-
-exit 0
