@@ -66,6 +66,9 @@ Squash permissions on all files
 .BI -q
 Squash permissions and owners (same as -P -U)
 .TP
+.BI -t \ seconds
+The Epoch-time timestamp to be used for inode and filesystem creation. Defaults to the present. Mainly useful for testing.
+.TP
 .BI -v
 Print resulting filesystem structure
 .TP
@@ -101,12 +104,19 @@ An example device file follows:
 # name	type mode uid gid major minor start inc count
 
 /dev		d	755	0	0	-	-	-	-	-
+
 /dev/mem	c	640	0	0	1	1	0	0	-
+
 /dev/tty	c	666	0	0	5	0	0	0	-
+
 /dev/tty	c	666	0	0	4	0	0	1	6
+
 /dev/loop	b	640	0	0	7	0	0	1	2
+
 /dev/hda	b	640	0	0	3	0	0	0	-
+
 /dev/hda	b	640	0	0	3	1	1	1	16
+
 /dev/log	s	666	0	0	-	-	-	-	-
 .EE
 
