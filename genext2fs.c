@@ -313,9 +313,24 @@ typedef unsigned int uint32;
 // glibc ...
 
 #ifdef __GNUC__
+#ifndef __sparc__
 #define SCANF_PREFIX "a"
 #define SCANF_STRING(s) (&s)
 #define GETCWD_SIZE 0
+#else
+#define SCANF_PREFIX "511"
+#define SCANF_STRING(s) (s = malloc(512))
+#define GETCWD_SIZE 4096
+inline int snprintf(char *str, size_t n, const char *fmt, ...)
+{
+	int ret;
+	va_list ap;
+	va_start(ap, fmt);
+	ret = vsprintf(str, fmt, ap);
+	va_end(ap);
+	return ret;
+}
+#endif
 #else
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
@@ -1033,7 +1048,7 @@ static void truncate_nod(filesystem *fs, uint32 nod)
 {
 	inode *node = get_nod(fs, nod);
 assert(!node->i_size);
-#warning truncate_nod() no yet implemented
+#warning truncate_nod() not yet implemented
 }
 
 // link an entry (inode #) to a directory
