@@ -181,7 +181,7 @@ static int count_ino_in_hashtable(void)
 #define BLOCKS_PER_GROUP  8192
 #define BYTES_PER_INODE   (8*BLOCKSIZE)
 /* Percentage of blocks that are reserved.*/
-#define RESERVED_INODES       5/100
+#define RESERVED_BLOCKS       5/100
 #define MAX_RESERVED_BLOCKS  25/100
 
 
@@ -2276,7 +2276,7 @@ int main(int argc, char **argv)
 		if(nbinodes == -1)
 			nbinodes = nbblocks * BLOCKSIZE / rndup(BYTES_PER_INODE, BLOCKSIZE);
 		if(nbresrvd == -1)
-			nbresrvd = nbblocks * RESERVED_INODES;
+			nbresrvd = nbblocks * RESERVED_BLOCKS;
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes);
 	}
 	for(i = 0; i < didx; i++)
