@@ -2273,7 +2273,7 @@ main(int argc, char **argv)
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
 	uint32 fs_timestamp = -1;
-	char * fsout;
+	char * fsout = "-";
 	char * fsin = 0;
 	char * dopt[MAX_DOPT];
 	int didx = 0;
@@ -2290,6 +2290,13 @@ main(int argc, char **argv)
 	int i;
 	int c;
 	struct stats stats;
+
+	app_name = argv[0];
+	if (argc == 1)
+	{
+		showhelp();
+		exit(0);
+	}
 
 	struct option longopts[] = {
 	  { "starting-image",	required_argument,	NULL, 'x' },
@@ -2310,7 +2317,6 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
-	app_name = argv[0];
 	while((c = getopt_long(argc, argv, "x:d:D:b:i:r:g:e:zfqUPhv", longopts, NULL)) != EOF) {
 		switch(c)
 		{
@@ -2367,11 +2373,6 @@ main(int argc, char **argv)
 		error_msg_and_die("too many arguments");
 	if(optind == (argc - 1))
 		fsout = argv[optind];
-	else
-	{
-		showhelp();
-		exit(0);
-	}
 
 	hdlinks.hdl = (struct hdlink_s *)malloc(hdlink_cnt * sizeof(struct hdlink_s));
 	if (!hdlinks.hdl)
