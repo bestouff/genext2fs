@@ -4,3 +4,14 @@ Disclaimer: I'll probably never do all this ...
 - support many group-descriptors (for >8MB fs)
 - support fancy ext2 options
 - support ext3
+
+- add path to -f/-d options, e.g:
+	-f /:file.img		=>	extract file.img at root
+	-d /etc:/path/to/my/etc	=>	copy /path/to/my/etc into /etc
+
+- add tar.gz extraction capabilities ?
+
+
+- move stat_from_* and parse*/add2fs* to common backend
+- get rid of extra args to add2dir()
+- generalize mknod (use it as backend for mkdir, mkfile ...)
