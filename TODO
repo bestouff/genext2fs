@@ -12,3 +12,5 @@ Disclaimer: I'll probably never do all this ...
   and increase if possible (bigger would be more space efficient)
 - align the first block of the in-memory image with a VM page boundary to make
   it more efficient to build a large filesystem in swap.
+- make use of autotools instead of using the __sparc__ macro hack, which
+  is problematic on Solaris/x86 and Linux/SPARC.
