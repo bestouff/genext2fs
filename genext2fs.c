@@ -1240,11 +1240,23 @@ static uint32 get_mode(struct stat *st)
 	uint32 mode = 0;
 
 	if(st->st_mode & S_IRUSR)
-		mode |= FM_IRUSR | FM_IRGRP | FM_IROTH;
+		mode |= FM_IRUSR;
 	if(st->st_mode & S_IWUSR)
-		mode |= FM_IWUSR | FM_IWGRP | FM_IWOTH;
+		mode |= FM_IWUSR;
 	if(st->st_mode & S_IXUSR)
-		mode |= FM_IXUSR | FM_IXGRP | FM_IXOTH;
+		mode |= FM_IXUSR;
+	if(st->st_mode & S_IRGRP)
+		mode |= FM_IRGRP;
+	if(st->st_mode & S_IWGRP)
+		mode |= FM_IWGRP;
+	if(st->st_mode & S_IXGRP)
+		mode |= FM_IXGRP;
+	if(st->st_mode & S_IROTH)
+		mode |= FM_IROTH;
+	if(st->st_mode & S_IWOTH)
+		mode |= FM_IWOTH;
+	if(st->st_mode & S_IXOTH)
+		mode |= FM_IXOTH;
 	return mode;
 }
 
