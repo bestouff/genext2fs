@@ -31,6 +31,8 @@
 // 	10 Oct 2002	Added comments,makefile targets,	vsundar@ixiacom.com    
 // 			endianess swap assert check.  
 // 			Copyright (C) 2002 Ixia communications
+// 	12 Oct 2002	Added support for triple indirection	vsundar@ixiacom.com
+// 			Copyright (C) 2002 Ixia communications
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
@@ -654,9 +656,89 @@ uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs);
 	}
-	// I don't do triple indirect - it's such a small filesystem ...
+
+	/* Adding support for triple indirection */
+	/* Just starting triple indirection. Allocate the indirection
+	   blocks and the first data block
+	 */
+	else if (bw->bpdir == EXT2_DIND_BLOCK) 
+	{
+	  	bw->bnum += 3;
+		bw->bpdir = EXT2_TIND_BLOCK;
+		bw->bpind = 0;
+		bw->bpdind = 0;
+		bw->bptind = 0;
+		if(extend) // allocate triple indirect block
+			get_nod(fs, nod)->i_block[bw->bpdir] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
+		if(extend) // allocate first double indirect block
+			b[bw->bpind] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, b[bw->bpind]);
+		if(extend) // allocate first indirect block
+			b[bw->bpdind] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, b[bw->bpdind]);
+		bkref = &b[bw->bptind];
+		if(extend) // allocate first data block
+			*bkref = hole ? 0 : alloc_blk(fs);
+	}
+	/* Still processing a single indirect block down the indirection
+	   chain.Allocate a data block for it
+	 */
+	else if ( (bw->bpdir == EXT2_TIND_BLOCK) && 
+		  (bw->bptind < BLOCKSIZE/4 -1) )
+	{
+		bw->bptind++;
+		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
+		b = (uint32*)get_blk(fs, b[bw->bpind]);
+		b = (uint32*)get_blk(fs, b[bw->bpdind]);
+		bkref = &b[bw->bptind];
+		if(extend) // allocate data block
+			*bkref = hole ? 0 : alloc_blk(fs);
+	}
+	/* Finished processing a single indirect block. But still in the 
+	   same double indirect block. Allocate new single indirect block
+	   for it and a data block
+	 */
+	else if ( (bw->bpdir == EXT2_TIND_BLOCK) &&
+		  (bw->bpdind < BLOCKSIZE/4 -1) )
+	{
+		bw->bnum++;
+		bw->bptind = 0;
+		bw->bpdind++;
+		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
+		b = (uint32*)get_blk(fs, b[bw->bpind]);
+		if (extend) // allocate single indirect block
+			b[bw->bpdind] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, b[bw->bpdind]);
+		bkref = &b[bw->bptind];
+		if(extend) // allocate first data block
+			*bkref = hole ? 0 : alloc_blk(fs);
+	}
+	/* Finished processing a double indirect block. Allocate the next
+	   double indirect block and the single,data blocks for it
+	 */
+	else if ( (bw->bpdir == EXT2_TIND_BLOCK) && 
+		  (bw->bpind < BLOCKSIZE/4 - 1) )
+	{
+		bw->bnum += 2;
+		bw->bpdind = 0;
+		bw->bptind = 0;
+		bw->bpind++;
+		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
+		if(extend) // allocate double indirect block
+			b[bw->bpind] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, b[bw->bpind]);
+		if(extend) // allocate single indirect block
+			b[bw->bpdind] = alloc_blk(fs);
+		b = (uint32*)get_blk(fs, b[bw->bpdind]);
+		bkref = &b[bw->bptind];
+		if(extend) // allocate first block
+			*bkref = hole ? 0 : alloc_blk(fs);
+	}
 	else
-		errexit("file too big ! blocks list for inode %d extends past double indirect blocks!", nod);
+		errexit("file too big ! blocks list for inode %d extends past triple indirect blocks!", nod);
+	/* End change for walking triple indirection */
+
 	if(*bkref)
 	{
 		bw->bnum++;
@@ -1017,7 +1099,9 @@ void add2fs_from_dir(filesystem *fs, uint32 this_nod)
 // endianness swap of x-indirect blocks
 void swap_goodblocks(filesystem *fs, inode *nod)
 {
-	int i;
+	int i,j,done=0;
+	uint32 *b,*b2;
+
 	int nblk = nod->i_blocks / INOBLK;
 	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
 		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
@@ -1045,12 +1129,32 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	swap_block(get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
 		return;
-	errexit("too big file on the filesystem");
+	/* Adding support for triple indirection */
+	b = (uint32*)get_blk(fs,nod->i_block[EXT2_TIND_BLOCK]);
+	for(i=0;i < BLOCKSIZE/4 && !done ; i++) {
+		b2 = (uint32*)get_blk(fs,b[i]); 
+		for(j=0; j<BLOCKSIZE/4;j++) {
+			if (nblk > ( EXT2_IND_BLOCK + BLOCKSIZE/4 + 
+				     (BLOCKSIZE/4)*(BLOCKSIZE/4) + 
+				     i*(BLOCKSIZE/4)*(BLOCKSIZE/4) + 
+				     j*(BLOCKSIZE/4)) ) 
+			  swap_block(get_blk(fs,b2[j]));
+			else {
+			  done = 1;
+			  break;
+			}
+		}
+		swap_block((uint8 *)b2);
+	}
+	swap_block((uint8 *)b);
+	return;
 }
 
 void swap_badblocks(filesystem *fs, inode *nod)
 {
-	int i;
+	int i,j,done=0;
+	uint32 *b,*b2;
+
 	int nblk = nod->i_blocks / INOBLK;
 	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
 		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
@@ -1068,7 +1172,25 @@ void swap_badblocks(filesystem *fs, inode *nod)
 			swap_block(get_blk(fs, ((uint32*)get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]))[i]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
 		return;
-	errexit("too big file on the filesystem");
+	/* Adding support for triple indirection */
+	b = (uint32*)get_blk(fs,nod->i_block[EXT2_TIND_BLOCK]);
+	swap_block((uint8 *)b);
+	for(i=0;i < BLOCKSIZE/4 && !done ; i++) {
+		b2 = (uint32*)get_blk(fs,b[i]); 
+		swap_block((uint8 *)b2);
+		for(j=0; j<BLOCKSIZE/4;j++) {
+			if (nblk > ( EXT2_IND_BLOCK + BLOCKSIZE/4 + 
+				     (BLOCKSIZE/4)*(BLOCKSIZE/4) + 
+				     i*(BLOCKSIZE/4)*(BLOCKSIZE/4) + 
+				     j*(BLOCKSIZE/4)) ) 
+			  swap_block(get_blk(fs,b2[j]));
+			else {
+			  done = 1;
+			  break;
+			}
+		}
+	}
+	return;
 }
 
 // endianness swap of the whole filesystem
