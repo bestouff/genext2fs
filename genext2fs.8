@@ -28,52 +28,54 @@ you to be the superuser to make device nodes.
 .SH OPTIONS
 .TP
 .BI -x \ image
-Use this image as a starting point
+Use this image as a starting point.
 .TP
-.BI -d \ directory
-Add this directory as source
+.BI -d \ directory[:path]
+Add this directory as source into specified path (by default
+into the root).
 .TP
-.BI -f \ FILE
+.BI -f \ file[:path]
 .TP
-.BI -D \ FILE
-Uses the named FILE as a device table file, to create device 
-nodes and directories "on the fly".
+.BI -D \ file[:path]
+Use the named FILE as a device table file into the specified
+path (by default into the root), to create device nodes and
+directories "on the fly".
 .TP
 .BI -b \ blocks
-Size in blocks
+Size in blocks.
 .TP
 .BI -i \ inodes
-Number of inodes
+Number of inodes.
 .TP
 .BI -r \ reserved
 Number of reserved blocks. Pass 0 to omit lost+found.
 .TP
 .BI -g \ path
-Generate a block map file for this path
+Generate a block map file for this path.
 .TP
 .BI -e \ value
-Fill unallocated blocks with value
+Fill unallocated blocks with value.
 .TP
 .BI -z
-Make files with holes
+Make files with holes.
 .TP
 .BI -U
-Squash owners making all files be owned by root
+Squash owners making all files be owned by root.
 .TP
 .BI -P
-Squash permissions on all files
+Squash permissions on all files.
 .TP
 .BI -q
-Squash permissions and owners (same as -P -U)
+Squash permissions and owners (same as -P -U).
 .TP
 .BI -t \ seconds
 The Epoch-time timestamp to be used for inode and filesystem creation. Defaults to the present. Mainly useful for testing.
 .TP
 .BI -v
-Print resulting filesystem structure
+Print resulting filesystem structure.
 .TP
 .BI -h
-Display help
+Display help.
 .TP
 .SH EXAMPLES
 
@@ -84,7 +86,7 @@ Display help
 
 All files in the 
 .I src
-directory will be written to 
+directory will be written to .
 .B /dev/fd0
 as a new ext2 filesystem image. You can then mount the floppy as
 usual.
