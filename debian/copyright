@@ -1,0 +1,15 @@
+This package was debianized by David Kimdon <dwhedon@debian.org> on
+Sat, 14 Jul 2001 13:24:49 -0700.
+
+It was downloaded from http://freshmeat.net/projects/genext2fs/
+Upstream Author(s):   Xavier Bestel <xbestel@aplio.fr>
+
+Copyright (C) 2000 Xavier Bestel <xavier.bestel@free.fr>
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; version
+2 of the License.
+
+On Debian systems, the complete text of the GNU General Public
+License can be found in /usr/share/common-licenses/GPL file.

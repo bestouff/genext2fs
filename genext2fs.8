@@ -1,0 +1,109 @@
+.\"                                      Hey, EMACS: -*- nroff -*-
+.\" First parameter, NAME, should be all caps
+.\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
+.\" other parameters are allowed: see man(7), man(1)
+.TH GENEXT2FS 8 "July 14, 2001"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH NAME
+genext2fs \- ext2 filesystem generator for embedded systems
+.SH SYNOPSIS
+.B genext2fs
+.RI [ options ]  " image"
+.SH DESCRIPTION
+\fBgenext2fs\fP generates an ext2 filesystem
+as a normal (non-root) user. It doesn't require you to mount
+the image file to copy files on it. It doesn't even require
+you to be the superuser to make device nodes.
+.SH WARNING
+\fBgenext2fs\fP has been designed for embedded
+systems. As such, it will generate a filesystem for single-user
+usage: all files/directories/etc... will belong to UID/GID 0
+.SH OPTIONS
+.TP
+.BI -x \ image
+Use this image as a starting point
+.TP
+.BI -d \ directory
+Add this directory as source
+.TP
+.BI -f \ file
+Add nodes (e.g. devices) from this spec file
+.TP
+.BI -b \ blocks
+Size in blocks
+.TP
+.BI -i \ inodes
+Number of inodes
+.TP
+.BI -r \ reserved
+Number of reserved blocks
+.TP
+.BI -g \ path
+Generate a block map file for this path
+.TP
+.BI -e \ value
+Fill unallocated blocks with value
+.TP
+.BI -z
+Make files with holes
+.TP
+.BI -v
+Print resulting filesystem structure
+.TP
+.BI -h
+Display help
+.TP
+.SH EXAMPLES
+
+.EX
+.B
+ genext2fs -b 1440 -d src /dev/fd0
+.EE
+
+All files in the 
+.I src
+directory will be written to 
+.B /dev/fd0
+as a new ext2 filesystem image. You can then mount the floppy as
+usual.
+
+.EX
+.B
+ genext2fs -b 1024 -d src -f dev.txt flashdisk.img
+.EE
+
+This example builds a filesystem from all the files in 
+.I src
+, then device nodes are created based on the contents of the device file
+.I dev.txt.
+An example device file follows:
+
+.EX
+ drwx            /dev
+ crw-    10,190  /dev/lcd
+ brw-    1,0     /dev/ram0
+.EE
+
+This device list builds the /dev directory, a character device
+node /dev/lcd (major 10, minor 190) and a block device node
+/dev/ram0 (major 1, minor 0)
+
+.SH SEE ALSO
+.BR mkfs (8),
+.BR genromfs (8),
+.BR mkisofs (8).
+.br
+.SH AUTHOR
+This manual page was written by David Kimdon <dwhedon@debian.org>,
+for the Debian GNU/Linux system (but may be used by others).
