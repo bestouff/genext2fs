@@ -1361,7 +1361,7 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	if(nblk <= EXT2_IND_BLOCK)
 		return;
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
-	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
+	if(nblk <= EXT2_DIND_BLOCK + BLOCKSIZE/4)
 		return;
 	/* Currently this will fail b'cos the number of blocks as stored
 	   in i_blocks also includes the indirection blocks (see
@@ -1374,6 +1374,8 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	   started.This is benign as 0 means block 0 which has been
 	   zeroed out and therefore points back to itself from any offset
 	 */
+	// FIXME: I have fixed that, but I have the feeling the rest of
+	// ths function needs to be fixed for the same reasons - Xav
 	assert(nod->i_block[EXT2_DIND_BLOCK] != 0);
 	for(i = 0; i < BLOCKSIZE/4; i++)
 		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + (BLOCKSIZE/4)*i )
@@ -1414,7 +1416,7 @@ void swap_badblocks(filesystem *fs, inode *nod)
 	if(nblk <= EXT2_IND_BLOCK)
 		return;
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
-	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
+	if(nblk <= EXT2_DIND_BLOCK + BLOCKSIZE/4)
 		return;
 	/* See comment in swap_goodblocks */
 	assert(nod->i_block[EXT2_DIND_BLOCK] != 0);
