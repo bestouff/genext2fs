@@ -1324,6 +1324,11 @@ void add2fs_from_dir(filesystem *fs, uint32 this_nod)
 				((uint8*)get_nod(fs, nod)->i_block)[1] = (st.st_rdev >> 8);
 				add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
 				break;
+			case S_IFIFO:
+				nod = alloc_nod(fs);
+				get_nod(fs, nod)->i_mode = FM_IFIFO | get_mode(&st);
+				add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+				break;
 			case S_IFLNK:
 				b = xreadlink(dent->d_name);
 				mklink_fs(fs, this_nod, dent->d_name, st.st_size, b, st.st_uid, st.st_gid, st.st_ctime);
