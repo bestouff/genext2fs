@@ -1479,8 +1479,8 @@ filesystem * load_fs(FILE * fh, int swapit)
 	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
 	if(fssize < 16) // totally arbitrary
 		errexit("too small filesystem");
-	if(fssize > BLOCKS_PER_GROUP) // I build only one group
-		errexit("too big filesystem");
+	//if(fssize > BLOCKS_PER_GROUP) // I build only one group
+	//	errexit("too big filesystem");
 	if(!(fs = (filesystem*)calloc(fssize, BLOCKSIZE)))
 		errexit("not enough memory for filesystem");
 	if(fread(fs, BLOCKSIZE, fssize, fh) != fssize)
@@ -1747,20 +1747,36 @@ void print_inode(filesystem *fs, uint32 nod)
 void print_fs(filesystem *fs)
 {
 	int i;
-	printf("%d blocks (%d free, %d reserved), first data block: %d\n", fs->sb.s_blocks_count, fs->sb.s_free_blocks_count, fs->sb.s_r_blocks_count, fs->sb.s_first_data_block);
-	printf("%d inodes (%d free)\n", fs->sb.s_inodes_count, fs->sb.s_free_inodes_count);
-	printf("block size = %d, frag size = %d\n", fs->sb.s_log_block_size ? (fs->sb.s_log_block_size << 11) : 1024, fs->sb.s_log_frag_size ? (fs->sb.s_log_frag_size << 11) : 1024);
-	printf("%d blocks per group, %d frags per group, %d inodes per group\n", fs->sb.s_blocks_per_group, fs->sb.s_frags_per_group, fs->sb.s_inodes_per_group);
-	// *TBD* printf("block bitmap: block %d, inode bitmap: block %d, inode table: block %d\n", fs->gd.bg_block_bitmap, fs->gd.bg_inode_bitmap, fs->gd.bg_inode_table);
-	printf("block bitmap allocation:\n");
-	// *TBD* print_bm(fs->bbm, fs->sb.s_blocks_count);
-	printf("inode bitmap allocation:\n");
-	/* *TBD*
-	print_bm(fs->ibm, fs->sb.s_inodes_count);
-	for(i=1; i<=fs->sb.s_inodes_count; i++)
-		if(allocated(fs->ibm, i))
-			print_inode(fs, i);
-	*/
+	uint8 *ibm;
+
+	printf("%d blocks (%d free, %d reserved), first data block: %d\n",
+	       fs->sb.s_blocks_count, fs->sb.s_free_blocks_count,
+	       fs->sb.s_r_blocks_count, fs->sb.s_first_data_block);
+	printf("%d inodes (%d free)\n", fs->sb.s_inodes_count,
+	       fs->sb.s_free_inodes_count);
+	printf("block size = %d, frag size = %d\n",
+	       fs->sb.s_log_block_size ? (fs->sb.s_log_block_size << 11) : 1024,
+	       fs->sb.s_log_frag_size ? (fs->sb.s_log_frag_size << 11) : 1024);
+	printf("Number of groups: %d\n",GRP_NBGROUPS(fs));
+	printf("%d blocks per group,%d frags per group,%d inodes per group\n",
+	     fs->sb.s_blocks_per_group, fs->sb.s_frags_per_group,
+	     fs->sb.s_inodes_per_group);
+	printf("Size of inode table: %d blocks\n",
+			fs->sb.s_inodes_per_group * sizeof(inode)/BLOCKSIZE);
+	for (i = 0; i < GRP_NBGROUPS(fs); i++) {
+		printf("Group No: %d\n", i+1);
+		printf("block bitmap: block %d,inode bitmap: block %d, inode table: block %d\n",
+		     fs->gd[i].bg_block_bitmap, fs->gd[i].bg_inode_bitmap,
+		     fs->gd[i].bg_inode_table);
+		printf("block bitmap allocation:\n");
+		print_bm(GRP_GET_GROUP_BBM(fs, i),fs->sb.s_blocks_per_group);
+		printf("inode bitmap allocation:\n");
+		ibm = GRP_GET_GROUP_IBM(fs, i);
+		print_bm(ibm, fs->sb.s_inodes_per_group);
+		for (i = 1; i <= fs->sb.s_inodes_per_group; i++)
+			if (allocated(ibm, i))
+				print_inode(fs, i);
+	}
 }
 
 void dump_fs(filesystem *fs, FILE * fh, int swapit)
