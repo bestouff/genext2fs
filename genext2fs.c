@@ -41,14 +41,14 @@
 // 			Copyright (C) 2002 Ixia communications
 // 	14 Oct 2002	Added support for groups		vsundar@ixiacom.com
 // 			Copyright (C) 2002 Ixia communications
-//     5 Jan 2003  Bugfixes: reserved inodes should be set vsundar@usc.edu
-//             only in the first group; directory names
-//             need to be null padded at the end; and 
-//             number of blocks per group should be a 
-//             multiple of 8. Updated md5 values. 
-//     6 Jan 2003  Erik Andersen <andersee@debian.org> added
-//                         mkfs.jffs2 compatible device table support,
-//                         along with -q, -P, -U
+// 	 5 Jan 2003	Bugfixes: reserved inodes should be set vsundar@usc.edu
+// 			only in the first group; directory names
+// 			need to be null padded at the end; and 
+// 			number of blocks per group should be a 
+// 			multiple of 8. Updated md5 values. 
+// 	 6 Jan 2003	Erik Andersen <andersee@debian.org> added
+// 			mkfs.jffs2 compatible device table support,
+// 			along with -q, -P, -U
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
@@ -781,7 +781,7 @@ static void deallocate(block b, uint32 item)
 }
 
 // allocate a block
-static uint32 alloc_blk(filesystem *fs, uint32  nod)
+static uint32 alloc_blk(filesystem *fs, uint32 nod)
 {
 	uint32 bk=0;
 	uint32 grp,nbgroups;
@@ -801,6 +801,18 @@ static uint32 alloc_blk(filesystem *fs, uint32  nod)
 	if(!(fs->sb.s_free_blocks_count--))
 		error_msg_and_die("superblock free blocks count == 0 (corrupted fs?)");
 	return fs->sb.s_blocks_per_group*grp + bk;
+}
+
+// free a block
+static void free_blk(filesystem *fs, uint32 bk)
+{
+	uint32 grp;
+
+	grp = bk / fs->sb.s_blocks_per_group;
+	bk %= fs->sb.s_blocks_per_group;
+	deallocate(get_blk(fs,fs->gd[grp].bg_block_bitmap), bk);
+	fs->gd[grp].bg_free_blocks_count++;
+	fs->sb.s_free_blocks_count++;
 }
 
 // allocate an inode
@@ -857,17 +869,27 @@ static void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
 }
 
 // return next block of inode (WALK_END for end)
-// if create>0, append a newly allocated block at the end
+// if *create>0, append a newly allocated block at the end
+// if *create<0, free the block - warning, the metadata blocks contents is
+//				  used after being freed, so once you start
+//				  freeing blocks don't stop until the end of
+//				  the file. moreover, i_blocks isn't updated.
+//				  in fact, don't do that, just use extend_blk
 // if hole!=0, create a hole in the file
-static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint32 hole)
+static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 {
 	uint32 *bkref = 0;
 	uint32 *b;
-	int extend = 0;
+	int extend = 0, reduce = 0;
+	if(create && (*create) < 0)
+		reduce = 1;
 	if(bw->bnum >= get_nod(fs, nod)->i_blocks / INOBLK)
 	{
-		if(create && (*create)--)
+		if(create && (*create) > 0)
+		{
+			(*create)--;
 			extend = 1;
+		}
 		else	
 			return WALK_END;
 	}
@@ -877,6 +899,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bkref = &get_nod(fs, nod)->i_block[bw->bpdir = 0];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	// direct block
 	else if(bw->bpdir < EXT2_NDIR_BLOCKS)
@@ -884,6 +908,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bkref = &get_nod(fs, nod)->i_block[++bw->bpdir];
 		if(extend) // allocate block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free block
+			free_blk(fs, *bkref);
 	}
 	// first block in indirect block
 	else if(bw->bpdir == EXT2_NDIR_BLOCKS)
@@ -893,10 +919,14 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bw->bpind = 0;
 		if(extend) // allocate indirect block
 			get_nod(fs, nod)->i_block[bw->bpdir] = alloc_blk(fs,nod);
+		if(reduce) // free indirect block
+			free_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		bkref = &b[bw->bpind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	// block in indirect block
 	else if((bw->bpdir == EXT2_IND_BLOCK) && (bw->bpind < BLOCKSIZE/4 - 1))
@@ -906,6 +936,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bkref = &b[bw->bpind];
 		if(extend) // allocate block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free block
+			free_blk(fs, *bkref);
 	}
 	// first block in first indirect block in first double indirect block
 	else if(bw->bpdir == EXT2_IND_BLOCK)
@@ -916,13 +948,19 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bw->bpdind = 0;
 		if(extend) // allocate double indirect block
 			get_nod(fs, nod)->i_block[bw->bpdir] = alloc_blk(fs,nod);
+		if(reduce) // free double indirect block
+			free_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		if(extend) // allocate first indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
+		if(reduce) // free  firstindirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpind]);
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	// block in indirect block in double indirect block
 	else if((bw->bpdir == EXT2_DIND_BLOCK) && (bw->bpdind < BLOCKSIZE/4 - 1))
@@ -933,6 +971,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free block
+			free_blk(fs, *bkref);
 	}
 	// first block in indirect block in double indirect block
 	else if((bw->bpdir == EXT2_DIND_BLOCK) && (bw->bpind < BLOCKSIZE/4 - 1))
@@ -943,10 +983,14 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		if(extend) // allocate indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
+		if(reduce) // free indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpind]);
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 
 	/* Adding support for triple indirection */
@@ -962,16 +1006,24 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bw->bptind = 0;
 		if(extend) // allocate triple indirect block
 			get_nod(fs, nod)->i_block[bw->bpdir] = alloc_blk(fs,nod);
+		if(reduce) // free triple indirect block
+			free_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		if(extend) // allocate first double indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
+		if(reduce) // free first double indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpind]);
 		if(extend) // allocate first indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
+		if(reduce) // free first indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpdind]);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	/* Still processing a single indirect block down the indirection
 	   chain.Allocate a data block for it
@@ -986,6 +1038,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bkref = &b[bw->bptind];
 		if(extend) // allocate data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free block
+			free_blk(fs, *bkref);
 	}
 	/* Finished processing a single indirect block. But still in the 
 	   same double indirect block. Allocate new single indirect block
@@ -999,12 +1053,16 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		bw->bpdind++;
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		b = (uint32*)get_blk(fs, b[bw->bpind]);
-		if (extend) // allocate single indirect block
+		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
+		if(reduce) // free indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpdind]);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	/* Finished processing a double indirect block. Allocate the next
 	   double indirect block and the single,data blocks for it
@@ -1019,13 +1077,19 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 		b = (uint32*)get_blk(fs, get_nod(fs, nod)->i_block[bw->bpdir]);
 		if(extend) // allocate double indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
+		if(reduce) // free double indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpind]);
 		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
+		if(reduce) // free indirect block
+			free_blk(fs, b[bw->bpind]);
 		b = (uint32*)get_blk(fs, b[bw->bpdind]);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
+		if(reduce) // free first block
+			free_blk(fs, *bkref);
 	}
 	else
 		error_msg_and_die("file too big !"); 
@@ -1034,7 +1098,7 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *creat
 	if(*bkref)
 	{
 		bw->bnum++;
-		if(!allocated(GRP_GET_BLOCK_BITMAP(fs,*bkref), GRP_BBM_OFFSET(fs,*bkref)))
+		if(!reduce && !allocated(GRP_GET_BLOCK_BITMAP(fs,*bkref), GRP_BBM_OFFSET(fs,*bkref)))
 			error_msg_and_die("[block %d of inode %d is unallocated !]", *bkref, nod);
 	}
 	if(extend)
@@ -1049,6 +1113,16 @@ static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 	blockwalker bw, lbw;
 	uint32 bk;
 	init_bw(fs, nod, &bw);
+	if(amount < 0)
+	{
+		int i;
+		for(i = 0; i < get_nod(fs, nod)->i_blocks / INOBLK + amount; i++)
+			walk_bw(fs, nod, &bw, 0, 0);
+		while(walk_bw(fs, nod, &bw, &create, 0) != WALK_END)
+			/*nop*/;
+		get_nod(fs, nod)->i_blocks += amount * INOBLK;
+		return;
+	}
 	lbw = bw;
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 		lbw = bw;
@@ -1070,13 +1144,6 @@ static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 		if(copyb)
 			memcpy(get_blk(fs, bk), b + BLOCKSIZE * (amount - create - 1), BLOCKSIZE);
 	}
-}
-
-static void truncate_nod(filesystem *fs, uint32 nod)
-{
-	inode *node = get_nod(fs, nod);
-assert(!node->i_size);
-#warning truncate_nod() not yet implemented
 }
 
 // link an entry (inode #) to a directory
@@ -1247,7 +1314,7 @@ static inline uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *nam
 static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 *b, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO, uid, gid, 0, 0, ctime, mtime);
-	truncate_nod(fs, nod);
+	extend_blk(fs, nod, 0, - (int)get_nod(fs, nod)->i_blocks / INOBLK);
 	get_nod(fs, nod)->i_size = size;
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
 	{
@@ -1263,7 +1330,7 @@ static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uin
 {
 	uint8 * b;
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
-	truncate_nod(fs, nod);
+	extend_blk(fs, nod, 0, - (int)get_nod(fs, nod)->i_blocks / INOBLK);
 	get_nod(fs, nod)->i_size = size;
 	if (size) {
 		if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
@@ -2206,7 +2273,7 @@ static void showhelp(void)
 	"  -g path          Generate a block map file for this path\n"
 	"  -e value         Fill unallocated blocks with value\n"
 	"  -z               Make files with holes\n"
-	"  -D,-f            Use the named FILE as a device table file\n"
+	"  -D,-f file       Use the named file as a device table file\n"
 	"  -q               Squash permissions and owners making all files be owned by root\n"
 	"  -U               Squash owners making all files be owned by root\n"
 	"  -P               Squash permissions on all files\n"

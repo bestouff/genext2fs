@@ -3,11 +3,10 @@ Disclaimer: I'll probably never do all this ...
 - support fancy ext2 options
 - support ext3
 
-- add path to -f/-d options, e.g:
-	-f /:file.img		=>	extract file.img at root
+- add path to -x/-f/-d options, e.g:
+	-x /:file.img		=>	extract file.img at root
 	-d /etc:/path/to/my/etc	=>	copy /path/to/my/etc into /etc
 
 - add tar.gz extraction capabilities ?
 
-- implement truncate_node
 - find a better way to guess filesystem's size
