@@ -104,7 +104,7 @@ struct stats {
 	unsigned long ninodes;
 };
 
-int is_in_ino_dev_hashtable(const struct stat *statbuf, char **name)
+static int is_in_ino_dev_hashtable(const struct stat *statbuf, char **name)
 {
 	ino_dev_hashtable_bucket_t *bucket;
 
@@ -122,7 +122,7 @@ int is_in_ino_dev_hashtable(const struct stat *statbuf, char **name)
 }
 
 /* Add statbuf to statbuf hash table */
-void add_to_ino_dev_hashtable(const struct stat *statbuf, const char *name)
+static void add_to_ino_dev_hashtable(const struct stat *statbuf, const char *name)
 {
 	int i;
 	size_t s;
@@ -142,7 +142,7 @@ void add_to_ino_dev_hashtable(const struct stat *statbuf, const char *name)
 }
 
 /* Clear statbuf hash table */
-void reset_ino_dev_hashtable(void)
+static void reset_ino_dev_hashtable(void)
 {
 	int i;
 	ino_dev_hashtable_bucket_t *bucket;
@@ -220,18 +220,19 @@ static int count_ino_in_hashtable(void)
 // file modes
 
 #define FM_IFMT    0xF000	// format mask
-#define FM_IFLNK   0xA000	// socket
-#define FM_IFSOCK  0xC000	// symbolic link
+#define FM_IFLNK   0xA000	// symbolic link
+#define FM_IFSOCK  0xC000	// socket
 #define FM_IFREG   0x8000	// regular file
 #define FM_IFBLK   0x6000	// block device
 #define FM_IFDIR   0x4000	// directory
 #define FM_IFCHR   0x2000	// character device
 #define FM_IFIFO   0x1000	// fifo
 
-#define FM_IMASK   0x0FFF
+#define FM_IMASK   0x0FFF	// all perms
 #define FM_ISUID   0x0800	// SUID
 #define FM_ISGID   0x0400	// SGID
 #define FM_ISVTX   0x0200	// sticky bit
+
 
 #define FM_IRWXU   0x01C0	// user mask
 #define FM_IRUSR   0x0100	// read
@@ -315,7 +316,7 @@ typedef unsigned int uint32;
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
 #define GETCWD_SIZE -1
-inline int snprintf(char *str, size_t n, const char *fmt, ...)
+static inline int snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
 	va_list ap;
@@ -329,12 +330,12 @@ inline int snprintf(char *str, size_t n, const char *fmt, ...)
 
 // endianness swap
 
-inline uint16 swab16(uint16 val)
+static inline uint16 swab16(uint16 val)
 {
 	return (val >> 8) | (val << 8);
 }
 
-inline uint32 swab32(uint32 val)
+static inline uint32 swab32(uint32 val)
 {
 	return ((val>>24) | ((val>>8)&0xFF00) |
 			((val<<8)&0xFF0000) | (val<<24));
@@ -508,35 +509,35 @@ typedef struct
 #define udecl32(x) this->x = swab32(this->x);
 #define utdecl32(x,n) { int i; for(i=0; i<n; i++) this->x[i] = swab32(this->x[i]); }
 
-void swap_sb(superblock *sb)
+static void swap_sb(superblock *sb)
 {
 #define this sb
 	superblock_decl
 #undef this
 }
 
-void swap_gd(groupdescriptor *gd)
+static void swap_gd(groupdescriptor *gd)
 {
 #define this gd
 	groupdescriptor_decl
 #undef this
 }
 
-void swap_nod(inode *nod)
+static void swap_nod(inode *nod)
 {
 #define this nod
 	inode_decl
 #undef this
 }
 
-void swap_dir(directory *dir)
+static void swap_dir(directory *dir)
 {
 #define this dir
 	directory_decl
 #undef this
 }
 
-void swap_block(block b)
+static void swap_block(block b)
 {
 	int i;
 	uint32 *blk = (uint32*)b;
@@ -552,7 +553,6 @@ void swap_block(block b)
 #undef udecl32
 #undef utdecl32
 
-char * argv0;
 static char * app_name;
 static int squash_uids = 0;
 static int squash_perms = 0;
@@ -632,7 +632,7 @@ static char *xstrdup(const char *s)
 	return t;
 }
 
-extern void *xrealloc(void *ptr, size_t size)
+static void *xrealloc(void *ptr, size_t size)
 {
 	ptr = realloc(ptr, size);
 	if (ptr == NULL && size != 0)
@@ -664,36 +664,36 @@ static char *xreadlink(const char *path)
 #define plural(a) (a), ((a) > 1) ? "s" : ""
 
 // temporary working block
-inline uint8 * get_workblk(void)
+static inline uint8 * get_workblk(void)
 {
 	unsigned char* b=calloc(1,BLOCKSIZE);
 	return b;
 }
-inline void free_workblk(block b)
+static inline void free_workblk(block b)
 {
 	free(b);
 }
 
 /* Rounds qty upto a multiple of siz. siz should be a power of 2 */
-uint32 rndup(uint32 qty, uint32 siz)
+static uint32 rndup(uint32 qty, uint32 siz)
 {
 	return (qty + (siz - 1)) & ~(siz - 1);
 }
 
 // check if something is allocated in the bitmap
-inline uint32 allocated(block b, uint32 item)
+static inline uint32 allocated(block b, uint32 item)
 {
 	return b[(item-1) / 8] & (1 << ((item-1) % 8));
 }
 
 // return a given block from a filesystem
-inline uint8 * get_blk(filesystem *fs, uint32 blk)
+static inline uint8 * get_blk(filesystem *fs, uint32 blk)
 {
 	return (uint8*)fs + blk*BLOCKSIZE;
 }
 
 // return a given inode from a filesystem
-inline inode * get_nod(filesystem *fs, uint32 nod)
+static inline inode * get_nod(filesystem *fs, uint32 nod)
 {
 	int grp,offset;
 	inode *itab;
@@ -706,7 +706,7 @@ inline inode * get_nod(filesystem *fs, uint32 nod)
 
 // allocate a given block/inode in the bitmap
 // allocate first free if item == 0
-uint32 allocate(block b, uint32 item)
+static uint32 allocate(block b, uint32 item)
 {
 	if(!item)
 	{
@@ -730,13 +730,13 @@ uint32 allocate(block b, uint32 item)
 }
 
 // deallocate a given block/inode
-void deallocate(block b, uint32 item)
+static void deallocate(block b, uint32 item)
 {
 	b[(item-1) / 8] &= ~(1 << ((item-1) % 8));
 }
 
 // allocate a block
-uint32 alloc_blk(filesystem *fs, uint32  nod)
+static uint32 alloc_blk(filesystem *fs, uint32  nod)
 {
 	uint32 bk=0;
 	uint32 grp,nbgroups;
@@ -759,7 +759,7 @@ uint32 alloc_blk(filesystem *fs, uint32  nod)
 }
 
 // allocate an inode
-uint32 alloc_nod(filesystem *fs)
+static uint32 alloc_nod(filesystem *fs)
 {
 	uint32 nod=0,best_group=0;
 	uint32 grp,nbgroups,avefreei;
@@ -790,7 +790,7 @@ uint32 alloc_nod(filesystem *fs)
 }
 
 // print a bitmap allocation
-void print_bm(block b, uint32 max)
+static void print_bm(block b, uint32 max)
 {
 	uint32 i;
 	printf("----+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8----+----9----+----0\n");
@@ -805,7 +805,7 @@ void print_bm(block b, uint32 max)
 }
 
 // initalize a blockwalker (iterator for blocks list)
-void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
+static void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
 {
 	bw->bnum = 0;
 	bw->bpdir = EXT2_INIT_BLOCK;
@@ -814,7 +814,7 @@ void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
 // return next block of inode (WALK_END for end)
 // if create>0, append a newly allocated block at the end
 // if hole!=0, create a hole in the file
-uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint32 hole)
+static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint32 hole)
 {
 	uint32 *bkref = 0;
 	uint32 *b;
@@ -998,7 +998,7 @@ uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint
 }
 
 // add blocks to an inode (file/dir/etc...)
-void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
+static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 {
 	int create = amount;
 	blockwalker bw, lbw;
@@ -1028,7 +1028,7 @@ void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 }
 
 // link an entry (inode #) to a directory
-void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 mode, uid_t uid, gid_t gid, time_t ctime)
+static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 mode, uid_t uid, gid_t gid, time_t ctime)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1075,7 +1075,7 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 m
 				node = get_nod(fs, nod);
 				node->i_links_count++;
 				d->d_name_len = nlen;
-				strncpy(d->d_name, name, rndup(nlen,4));
+				strncpy(d->d_name, name, nlen);
 				node->i_mode = mode;
 				node->i_uid = uid;
 				node->i_gid = gid;
@@ -1096,7 +1096,7 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 m
 				node = get_nod(fs, nod);
 				node->i_links_count++;
 				d->d_name_len = nlen;
-				strncpy(d->d_name, name, rndup(nlen,4));
+				strncpy(d->d_name, name, nlen);
 				node->i_mode = mode;
 				node->i_uid = uid;
 				node->i_gid = gid;
@@ -1115,7 +1115,7 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 m
 	node->i_links_count++;
 	d->d_rec_len = BLOCKSIZE;
 	d->d_name_len = nlen;
-	strncpy(d->d_name, name, rndup(nlen,4));
+	strncpy(d->d_name, name, nlen);
 	node->i_mode = mode;
 	node->i_uid = uid;
 	node->i_gid = gid;
@@ -1128,7 +1128,7 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 m
 }
 
 // find an entry in a directory
-uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
+static uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1147,7 +1147,7 @@ uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
 }
 
 // find the inode of a full path
-uint32 find_path(filesystem *fs, uint32 nod, const char * name)
+static uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 {
 	char *p, *n, *n2 = xstrdup(name);
 	n = n2;
@@ -1172,13 +1172,13 @@ uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 }
 
 // make a full-fledged directory (i.e. with "." & "..")
-uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
+static uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
 	uid_t uid, gid_t gid, time_t ctime)
 {
 	uint32 nod;
 	if((nod = find_dir(fs, parent_nod, name)))
 		return nod;
-       	nod = alloc_nod(fs);
+	nod = alloc_nod(fs);
 	mode |= FM_IFDIR;
 	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	add2dir(fs, nod, nod, ".", mode, uid, gid, ctime);
@@ -1188,13 +1188,13 @@ uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode
 }
 
 // make a symlink
-uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size,
+static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size,
 	uint8 * b, uid_t uid, gid_t gid, time_t ctime)
 {
 	uint32 mode;
 	uint32 nod = alloc_nod(fs);
 	mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
-	get_nod(fs, nod)->i_mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO;
+	get_nod(fs, nod)->i_mode = mode;
 	get_nod(fs, nod)->i_size = size;
 	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
@@ -1207,7 +1207,7 @@ uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t siz
 }
 
 // make a file from a FILE*
-uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, time_t ctime)
+static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, time_t ctime)
 {
 	uint8 * b;
 	uint32 nod = alloc_nod(fs);
@@ -1218,16 +1218,16 @@ uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mod
 		error_msg_and_die("not enough mem to read file '%s'", name);
 	memset(b, 0,rndup(size, BLOCKSIZE));
 	if(f)
-		fread(b, size, 1, f);
+		fread(b, size, 1, f); // FIXME: ugly. use mmap() ...
 	else
-		memset(b, 0, size);
+		memset(b, 0, size); // .. or handle b = 0
 	extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
 	free(b);
 	return nod;
 }
 
 // retrieves a mode info from a struct stat
-uint32 get_mode(struct stat *st)
+static uint32 get_mode(struct stat *st)
 {
 	uint32 mode = 0;
 
@@ -1249,14 +1249,20 @@ uint32 get_mode(struct stat *st)
 }
 
 // basename of a path - free me
-char * basename(const char * fullpath)
+static char * basename(const char * fullpath)
 {
 	char * p = strrchr(fullpath, '/');
+	if(!p[1])
+	{
+		while(*p == '/' && p > fullpath)
+			*(p--) = 0;
+		p = strrchr(fullpath, '/');
+	}
 	return xstrdup(p ? p + 1 : fullpath);
 }
 
 // dirname of a path - free me
-char * dirname(const char * fullpath)
+static char * dirname(const char * fullpath)
 {
 	char * p, * n = xstrdup(fullpath);
 	if((p = strrchr(n, '/')))
@@ -1266,40 +1272,168 @@ char * dirname(const char * fullpath)
 	return n;
 }
 
-void stats_from_dir(struct stats *stats)
+// create or fixup perms of an inode
+static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime)
 {
-	DIR *dh;
-	struct dirent *dent;
-	struct stat st;
-	if(!(dh = opendir(".")))
-		perror_msg_and_die(".");
-	while((dent = readdir(dh)))
+	uint32 nod;
+	inode *node;
+	if((nod = find_dir(fs, parent_nod, name)))
 	{
-		if((!strcmp(dent->d_name, ".")) || (!strcmp(dent->d_name, "..")))
+		node = get_nod(fs, nod);
+		if((node->i_mode & FM_IFMT) != (mode & FM_IFMT))
+			error_msg_and_die("node '%s' already exists and isn't of the same type", name);
+	}
+	else
+	{
+		switch(mode & FM_IFMT)
+		{
+			case FM_IFBLK:
+			case FM_IFCHR:
+                                nod = alloc_nod(fs);
+                                ((uint8*)get_nod(fs, nod)->i_block)[0] = minor;
+                                ((uint8*)get_nod(fs, nod)->i_block)[1] = major;
+                                add2dir(fs, parent_nod, nod, name, 0, 0, 0, 0);
+				break;
+			case FM_IFIFO:
+                                nod = alloc_nod(fs);
+                                add2dir(fs, parent_nod, nod, name, 0, 0, 0, 0);
+				break;
+			case FM_IFDIR:
+                                nod = mkdir_fs(fs, parent_nod, name, mode, 0, 0, 0);
+				break;
+			default:
+				error_msg("can't create node '%s' from scratch", name);
+				return 0;
+			
+		}
+		node = get_nod(fs, nod);
+	}
+	node->i_mode = mode;
+	node->i_uid = uid;
+	node->i_gid = gid;
+	node->i_atime = ctime;
+	node->i_ctime = ctime;
+	node->i_mtime = ctime;
+	return nod;
+}
+
+// add or fixup entries to the filesystem from a text file
+/*  device table entries take the form of:
+    <path>	<type> <mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
+    /dev/mem     c    640       0       0         1       1       0     0         -
+
+    type can be one of: 
+	f	A regular file
+	d	Directory
+	c	Character special device file
+	b	Block special device file
+	p	Fifo (named pipe)
+
+    I don't bother with symlinks (permissions are irrelevant), hard
+    links (special cases of regular files), or sockets (why bother).
+
+    Regular files must exist in the target root directory.  If a char,
+    block, fifo, or directory does not exist, it will be created.
+*/
+
+static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, struct stats *stats)
+{
+	unsigned long mode, uid, gid, major, minor;
+	unsigned long start, increment, count;
+        uint32 nod;
+        char *c, type, *path, *dir, *name, *line = NULL;
+	size_t len;
+	int nbargs, lineno = 0;
+	time_t now = time(NULL);
+
+	while(getline(&line, &len, fh) >= 0)
+	{
+		mode = uid = gid = major = minor = 0;
+		start = 0; increment = 1; count = 0; path = NULL;
+		lineno++;
+		if((c = strchr(line, '#')))
+			*c = 0;
+		nbargs = sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
+					SCANF_STRING(path), &type, &mode, &uid, &gid, &major, &minor,
+					&start, &increment, &count);
+		if(nbargs < 3)
+		{
+			if(nbargs > 0)
+				error_msg("device table line %d skipped: bad format for entry '%s'", lineno, path);
+			free(path);
 			continue;
-		lstat(dent->d_name, &st);
-		if (S_ISLNK(st.st_mode)) {
-			stats->ninodes++;
-		} else if (S_ISDIR(st.st_mode)) {
-			if(chdir(dent->d_name) < 0)
-				perror_msg_and_die(dent->d_name);
-			stats->ninodes++;
-			stats_from_dir(stats);
-			chdir("..");
-		} else {
-			if (!is_in_ino_dev_hashtable(&st, NULL)) {
-				add_to_ino_dev_hashtable(&st, NULL);
-				stats->nblocks += (st.st_blocks >> 1);
-				stats->ninodes++;
+		}
+		if(stats)
+		{
+                	free(path);
+			stats->ninodes += count ? count : 1;
+		}
+		else
+		{
+			mode &= FM_IMASK;
+                        name = basename(path);
+                        dir = dirname(path);
+                        free(path);
+                        if(!(nod = find_path(fs, this_nod, dir)))
+			{
+                                error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
+				free(name);
+				free(dir);
+				continue;
 			}
+                        free(dir);
+                        if((!strcmp(name, ".")) || (!strcmp(name, "..")))
+                        {
+                                error_msg("device table line %d skipped", lineno);
+                                free(name);
+                                continue;
+                        }
+        
+			switch (type)
+			{
+				case 'd':
+					mode |= S_IFDIR;
+					break;
+				case 'f':
+					mode |= S_IFREG;
+					break;
+				case 'p':
+					mode |= S_IFIFO;
+					break;
+				case 'c':
+					mode |= S_IFCHR;
+					break;
+				case 'b':
+					mode |= S_IFBLK;
+					break;
+				default:
+					error_msg("device table line %d skipped: bad type '%c' for entry '%s'", lineno, type, name);
+					free(name);
+					continue;
+			}
+			if(count > 0)
+			{
+				char *dname;
+				unsigned i, len;
+				len = strlen(name) + 10;
+				dname = malloc(len + 1);
+				for(i = start; i < count; i++)
+				{
+					snprintf(dname, len, "%s%u", name, i);
+					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor, now);
+				}
+				free(dname);
+			}
+			else
+				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, now);
+			free(name);
 		}
 	}
-	closedir(dh);
-	reset_ino_dev_hashtable();
+	free(line);
 }
 
 // adds a tree of entries to the filesystem from current dir
-void add2fs_from_dir(filesystem *fs, uint32 this_nod)
+static void add2fs_from_dir(filesystem *fs, uint32 this_nod, struct stats *stats)
 {
 	uint32 nod;
 	FILE *fh;
@@ -1314,47 +1448,70 @@ void add2fs_from_dir(filesystem *fs, uint32 this_nod)
 		if((!strcmp(dent->d_name, ".")) || (!strcmp(dent->d_name, "..")))
 			continue;
 		lstat(dent->d_name, &st);
-		switch(st.st_mode & S_IFMT)
-		{
-			case S_IFCHR:
-			case S_IFBLK:
-				nod = alloc_nod(fs);
-				get_nod(fs, nod)->i_mode = (((st.st_mode & S_IFMT) == S_IFCHR) ? FM_IFCHR : FM_IFBLK) | get_mode(&st);
-				((uint8*)get_nod(fs, nod)->i_block)[0] = (st.st_rdev & 0xff);
-				((uint8*)get_nod(fs, nod)->i_block)[1] = (st.st_rdev >> 8);
-				add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
-				break;
-			case S_IFIFO:
-				nod = alloc_nod(fs);
-				get_nod(fs, nod)->i_mode = FM_IFIFO | get_mode(&st);
-				add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
-				break;
-			case S_IFLNK:
-				b = xreadlink(dent->d_name);
-				mklink_fs(fs, this_nod, dent->d_name, st.st_size, b, st.st_uid, st.st_gid, st.st_ctime);
-				free(b);
-				break;
-			case S_IFREG:
-				fh = xfopen(dent->d_name, "r");
-				mkfile_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, st.st_ctime);
-				fclose(fh);
-				break;
-			case S_IFDIR:
-				nod = mkdir_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
-				if(chdir(dent->d_name) < 0)
-					perror_msg_and_die(dent->d_name);
-				add2fs_from_dir(fs, nod);
-				chdir("..");
-				break;
-			default:
-				error_msg("ignoring entry %s", dent->d_name);
-		}
+		if(stats)
+			switch(st.st_mode & S_IFMT)
+			{
+				case S_IFLNK:
+				case S_IFREG:
+					if((st.st_mode & S_IFMT) == S_IFREG || st.st_size > 4 * (EXT2_TIND_BLOCK+1))
+						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
+				case S_IFCHR:
+				case S_IFBLK:
+				case S_IFIFO:
+					stats->ninodes++;
+					break;
+				case S_IFDIR:
+					stats->ninodes++;
+					if(chdir(dent->d_name) < 0)
+						perror_msg_and_die(dent->d_name);
+					add2fs_from_dir(fs, nod, stats);
+					chdir("..");
+					break;
+				default:
+					break;
+			}
+		else
+			switch(st.st_mode & S_IFMT)
+			{
+				case S_IFCHR:
+				case S_IFBLK:
+					nod = alloc_nod(fs);
+					get_nod(fs, nod)->i_mode = (((st.st_mode & S_IFMT) == S_IFCHR) ? FM_IFCHR : FM_IFBLK) | get_mode(&st);
+					((uint8*)get_nod(fs, nod)->i_block)[0] = (st.st_rdev & 0xff);
+					((uint8*)get_nod(fs, nod)->i_block)[1] = (st.st_rdev >> 8);
+					add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					break;
+				case S_IFIFO:
+					nod = alloc_nod(fs);
+					get_nod(fs, nod)->i_mode = FM_IFIFO | get_mode(&st);
+					add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					break;
+				case S_IFLNK:
+					b = xreadlink(dent->d_name);
+					mklink_fs(fs, this_nod, dent->d_name, st.st_size, b, st.st_uid, st.st_gid, st.st_ctime);
+					free(b);
+					break;
+				case S_IFREG:
+					fh = xfopen(dent->d_name, "r");
+					mkfile_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, st.st_ctime);
+					fclose(fh);
+					break;
+				case S_IFDIR:
+					nod = mkdir_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					if(chdir(dent->d_name) < 0)
+						perror_msg_and_die(dent->d_name);
+					add2fs_from_dir(fs, nod, stats);
+					chdir("..");
+					break;
+				default:
+					error_msg("ignoring entry %s", dent->d_name);
+			}
 	}
 	closedir(dh);
 }
 
 // endianness swap of x-indirect blocks
-void swap_goodblocks(filesystem *fs, inode *nod)
+static void swap_goodblocks(filesystem *fs, inode *nod)
 {
 	int i,j,done=0;
 	uint32 *b,*b2;
@@ -1409,7 +1566,7 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	return;
 }
 
-void swap_badblocks(filesystem *fs, inode *nod)
+static void swap_badblocks(filesystem *fs, inode *nod)
 {
 	int i,j,done=0;
 	uint32 *b,*b2;
@@ -1453,7 +1610,7 @@ void swap_badblocks(filesystem *fs, inode *nod)
 }
 
 // endianness swap of the whole filesystem
-void swap_goodfs(filesystem *fs)
+static void swap_goodfs(filesystem *fs)
 {
 	int i;
 	for(i = 1; i < fs->sb.s_inodes_count; i++)
@@ -1481,7 +1638,7 @@ void swap_goodfs(filesystem *fs)
 	swap_sb(&fs->sb);
 }
 
-void swap_badfs(filesystem *fs)
+static void swap_badfs(filesystem *fs)
 {
 	int i;
 	swap_sb(&fs->sb);
@@ -1510,7 +1667,7 @@ void swap_badfs(filesystem *fs)
 }
 
 // initialize an empty filesystem
-filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
+static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 {
 	int i;
 	filesystem *fs;
@@ -1643,7 +1800,7 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	// make lost+found directory and reserve blocks
 	if(fs->sb.s_r_blocks_count)
 	{
-		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH, 0, 0, time(NULL));
+		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, time(NULL));
 		memset(b, 0, BLOCKSIZE);
 		((directory*)b)->d_rec_len = BLOCKSIZE;
 		/* We run into problems with e2fsck if directory lost+found grows
@@ -1669,7 +1826,7 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 }
 
 // loads a filesystem from disk
-filesystem * load_fs(FILE * fh, int swapit)
+static filesystem * load_fs(FILE * fh, int swapit)
 {
 	size_t fssize;
 	filesystem *fs;
@@ -1690,13 +1847,13 @@ filesystem * load_fs(FILE * fh, int swapit)
 	return fs;
 }
 
-void free_fs(filesystem *fs)
+static void free_fs(filesystem *fs)
 {
 	free(fs);
 }
 
 // just walk through blocks list
-void flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
+static void flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1707,7 +1864,7 @@ void flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
 }
 
 // walk through blocks list
-void list_blocks(filesystem *fs, uint32 nod)
+static void list_blocks(filesystem *fs, uint32 nod)
 {
 	int bn = 0;
 	blockwalker bw;
@@ -1720,7 +1877,7 @@ void list_blocks(filesystem *fs, uint32 nod)
 }
 
 // saves blocks to FILE*
-void write_blocks(filesystem *fs, uint32 nod, FILE* f)
+static void write_blocks(filesystem *fs, uint32 nod, FILE* f)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1737,7 +1894,7 @@ void write_blocks(filesystem *fs, uint32 nod, FILE* f)
 }
 
 // hexdumps blocks to a FILE*
-void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
+static void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1772,7 +1929,7 @@ void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 }
 
 // print block/char device minor and major
-void print_dev(filesystem *fs, uint32 nod)
+static void print_dev(filesystem *fs, uint32 nod)
 {
 	int minor, major;
 	minor = ((uint8*)get_nod(fs, nod)->i_block)[0];
@@ -1781,7 +1938,7 @@ void print_dev(filesystem *fs, uint32 nod)
 }
 
 // print an inode as a directory
-void print_dir(filesystem *fs, uint32 nod)
+static void print_dir(filesystem *fs, uint32 nod)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1805,7 +1962,7 @@ void print_dir(filesystem *fs, uint32 nod)
 }
 
 // print a symbolic link
-void print_link(filesystem *fs, uint32 nod)
+static void print_link(filesystem *fs, uint32 nod)
 {
 	if(!get_nod(fs, nod)->i_blocks)
 		printf("links to '%s'\n", (char*)get_nod(fs, nod)->i_block);
@@ -1818,7 +1975,7 @@ void print_link(filesystem *fs, uint32 nod)
 }
 
 // make a ls-like printout of permissions
-void make_perms(uint32 mode, char perms[11])
+static void make_perms(uint32 mode, char perms[11])
 {
 	strcpy(perms, "----------");
 	if(mode & FM_IRUSR)
@@ -1877,7 +2034,7 @@ void make_perms(uint32 mode, char perms[11])
 }
 
 // print an inode
-void print_inode(filesystem *fs, uint32 nod)
+static void print_inode(filesystem *fs, uint32 nod)
 {
 	char *s;
 	char perms[11];
@@ -1943,7 +2100,7 @@ void print_inode(filesystem *fs, uint32 nod)
 }
 
 // describes various fields in a filesystem
-void print_fs(filesystem *fs)
+static void print_fs(filesystem *fs)
 {
 	int i;
 	uint8 *ibm;
@@ -1956,7 +2113,7 @@ void print_fs(filesystem *fs)
 	printf("block size = %d, frag size = %d\n",
 	       fs->sb.s_log_block_size ? (fs->sb.s_log_block_size << 11) : 1024,
 	       fs->sb.s_log_frag_size ? (fs->sb.s_log_frag_size << 11) : 1024);
-	printf("Number of groups: %d\n",GRP_NBGROUPS(fs));
+	printf("number of groups: %d\n",GRP_NBGROUPS(fs));
 	printf("%d blocks per group,%d frags per group,%d inodes per group\n",
 	     fs->sb.s_blocks_per_group, fs->sb.s_frags_per_group,
 	     fs->sb.s_inodes_per_group);
@@ -1978,7 +2135,7 @@ void print_fs(filesystem *fs)
 	}
 }
 
-void dump_fs(filesystem *fs, FILE * fh, int swapit)
+static void dump_fs(filesystem *fs, FILE * fh, int swapit)
 {
 	int nbblocks = fs->sb.s_blocks_count;
 	fs->sb.s_reserved[200] = 0;
@@ -1990,289 +2147,7 @@ void dump_fs(filesystem *fs, FILE * fh, int swapit)
 		swap_badfs(fs);
 }
 
-/*  device table entries take the form of:
-    <path>	<type> <mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
-    /dev/mem     c    640       0       0         1       1       0     0         -
-
-    type can be one of: 
-	f	A regular file
-	d	Directory
-	c	Character special device file
-	b	Block special device file
-	p	Fifo (named pipe)
-
-    I don't bother with symlinks (permissions are irrelevant), hard
-    links (special cases of regular files), or sockets (why bother).
-
-    Regular files must exist in the target root directory.  If a char,
-    block, fifo, or directory does not exist, it will be created.
-*/
-
-static int interpret_table_entry(filesystem *fs, char *line)
-{
-// FIXME: this function is weird, it probably needs some love - Xav
-	char type, *name = NULL, *dir, *bname;
-	unsigned long mode = 0, uid = 0, gid = 0, major = 0, minor = 0;
-	unsigned long start = 0, increment = 1, count = 0;
-	inode *entry;
-	uint32 nod, parent;
-
-	if (sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
-				SCANF_STRING(name), &type, &mode, &uid, &gid, &major, &minor,
-				&start, &increment, &count) < 0) 
-	{
-		free(name);
-		return 1;
-	}
-	mode &= FM_IMASK;
-
-	if (*name != '/') {
-		error_msg_and_die("Device table entries require absolute paths");
-	}
-
-	/* Check if this file already exists... */
-	switch (type) {
-		case 'd':
-			mode |= S_IFDIR;
-			break;
-		case 'f':
-			mode |= S_IFREG;
-			break;
-		case 'p':
-			mode |= S_IFIFO;
-			break;
-		case 'c':
-			mode |= S_IFCHR;
-			break;
-		case 'b':
-			mode |= S_IFBLK;
-			break;
-		default:
-			error_msg_and_die("Unsupported file type");
-	}
-	nod = 0;
-	if (count==0)
-		nod = find_path(fs, EXT2_ROOT_INO, name);
-	if (nod) {
-		/* Ok, we just need to fixup an existing entry 
-		 * and we will be all done... */
-		entry = get_nod(fs, nod);
-		entry->i_uid = uid;
-		entry->i_gid = gid;
-		entry->i_mode = mode;
-		if (major) {
-			dev_t rdev = makedev(major, minor);
-			((uint8*)entry->i_block)[0] = (rdev & 0xff);
-			((uint8*)entry->i_block)[1] = (rdev >> 8);
-		}
-	} else {
-		/* Try and find our parent now */
-		dir = dirname(name);
-		parent = find_path(fs, EXT2_ROOT_INO, dir);
-		free(dir);
-		if (!parent) {
-			error_msg ("skipping device_table entry '%s': no parent directory!", name);
-			free(name);
-			return 1;
-		}
-
-		bname = basename(name);
-		switch (type) {
-			case 'd':
-				mkdir_fs(fs, parent, bname, mode|FM_IFDIR, uid, gid, time(NULL));
-				break;
-			case 'f':
-#if 0
-				{
-					// This is a bit odd.. This will try to include
-					// the file of the same name from your _build_
-					// system...  Probably a very bad idea....
-					struct stat st;
-					FILE *fh = xfopen(name, "r");
-					lstat(name, &st);
-					mkfile_fs(fs, parent, bname, mode|FM_IFREG, st.st_size, fh, uid, gid, st.st_ctime);
-					fclose(fh);
-				}
-#else
-				error_msg("ignoring entry %s", name);
-#endif
-				break;
-			case 'p':
-				error_msg("ignoring entry %s", name);
-				break;
-			case 'c':
-			case 'b':
-				if (count > 0) {
-					dev_t rdev;
-					char *dname;
-					unsigned long i;
-					for (i = start; i < count; i++) {
-						asprintf(&dname, "%s%lu", bname, i);
-						nod = find_path(fs, EXT2_ROOT_INO, dname);
-						if (nod) {
-							/* We just need to fixup an existing entry */ 
-							entry = get_nod(fs, nod);
-						} else {
-							nod = alloc_nod(fs);
-							add2dir(fs, parent, nod, dname, mode, uid, gid, time(NULL));
-							entry = get_nod(fs, nod);
-						}
-						entry->i_uid = uid;
-						entry->i_gid = gid;
-						entry->i_mode = mode;
-						rdev = makedev(major, minor + (i * increment - start));
-						((uint8*)entry->i_block)[0] = (rdev & 0xff);
-						((uint8*)entry->i_block)[1] = (rdev >> 8);
-						free(dname);
-					}
-				} else {
-					dev_t rdev = makedev(major, minor);
-					nod = alloc_nod(fs);
-					add2dir(fs, parent, nod, bname, mode, uid, gid, time(NULL));
-					entry = get_nod(fs, nod);
-					((uint8*)entry->i_block)[0] = (rdev & 0xff);
-					((uint8*)entry->i_block)[1] = (rdev >> 8);
-				}
-				break;
-			default:
-				error_msg_and_die("Unsupported file type");
-		}
-		free(bname);
-	}
-	free(name);
-	return 0;
-}
-
-static int stats_from_table_entry(char *line, struct stats *stats)
-{
-	char type, *name = NULL, *tmp, *dir, *bname;
-	unsigned long mode = 0755, uid = 0, gid = 0, major = 0, minor = 0;
-	unsigned long start = 0, increment = 1, count = 0;
-	inode *entry;
-
-	if (sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
-				SCANF_STRING(name), &type, &mode, &uid, &gid, &major, &minor,
-				&start, &increment, &count) < 0) 
-	{
-		return 1;
-	}
-
-	if (!strcmp(name, "/")) {
-		error_msg_and_die("Device table entries require absolute paths");
-	}
-
-	tmp = xstrdup(name);
-	bname = xstrdup(basename(tmp));
-	free(tmp);
-	switch (type) {
-		case 'd':
-			stats->ninodes++;
-			break;
-		case 'c':
-		case 'b':
-			if (count > 0) {
-				dev_t rdev;
-				char *dname;
-				unsigned long i;
-				for (i = start; i < count; i++) {
-					asprintf(&dname, "%s%lu", bname, i);
-					stats->ninodes++;
-					free(dname);
-				}
-			} else {
-				stats->ninodes++;
-			}
-			break;
-	}
-	free(bname);
-	free(name);
-	return 0;
-}
-
-static int parse_device_table(filesystem *root, FILE * file)
-{
-	char *line;
-	int status = 0;
-	size_t length = 0;
-
-	/* Turn off squash, since we must ensure that values
-	 * entered via the device table are not squashed */
-	squash_uids = 0;
-	squash_perms = 0;
-
-	/* Looks ok so far.  The general plan now is to read in one
-	 * line at a time, check for leading comment delimiters ('#'),
-	 * then try and parse the line as a device table.  If we fail
-	 * to parse things, try and help the poor fool to fix their
-	 * device table with a useful error msg... */
-	line = NULL;
-	while (getline(&line, &length, file) != -1) {
-		/* First trim off any whitespace */
-		int len = strlen(line);
-
-		/* trim trailing whitespace */
-		while (len > 0 && isspace(line[len - 1]))
-			line[--len] = '\0';
-		/* trim leading whitespace */
-		memmove(line, &line[strspn(line, " \n\r\t\v")], len);
-
-		/* How long are we after trimming? */
-		len = strlen(line);
-
-		/* If this is NOT a comment line, try to interpret it */
-		if (len && *line != '#') {
-			if (interpret_table_entry(root, line))
-				status = 1;
-		}
-
-		free(line);
-		line = NULL;
-	}
-	fclose(file);
-
-	return status;
-}
-
-static int stats_from_dev_table(FILE *file, struct stats *stats)
-{
-	char *line;
-	int status = 0;
-	size_t length = 0;
-
-	/* Looks ok so far.  The general plan now is to read in one
-	 * line at a time, check for leading comment delimiters ('#'),
-	 * then try and parse the line as a device table.  If we fail
-	 * to parse things, try and help the poor fool to fix their
-	 * device table with a useful error msg... */
-	line = NULL;
-	while (getline(&line, &length, file) != -1) {
-		/* First trim off any whitespace */
-		int len = strlen(line);
-
-		/* trim trailing whitespace */
-		while (len > 0 && isspace(line[len - 1]))
-			line[--len] = '\0';
-		/* trim leading whitespace */
-		memmove(line, &line[strspn(line, " \n\r\t\v")], len);
-
-		/* How long are we after trimming? */
-		len = strlen(line);
-
-		/* If this is NOT a comment line, try to interpret it */
-		if (len && *line != '#') {
-			if (stats_from_table_entry(line, stats))
-				status = 1;
-		}
-
-		free(line);
-		line = NULL;
-	}
-	fclose(file);
-
-	return status;
-}
-
-void showhelp(void)
+static void showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
@@ -2290,7 +2165,7 @@ void showhelp(void)
 	"  -P               Squash permissions on all files\n"
 	"  -v               Print resulting filesystem structure\n"
 	"  -h               Show this help\n\n"
-	"Report bugs to xavier.bestel@free.fr\n", app_name);
+	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
 }
 
 #define MAX_DOPT 128
@@ -2322,8 +2197,6 @@ int main(int argc, char **argv)
 	filesystem *fs;
 	int i;
 	int c;
-	struct stat sb;
-	FILE *devtable = NULL;
 	struct stats stats;
 
 	app_name = argv[0];
@@ -2334,6 +2207,8 @@ int main(int argc, char **argv)
 				fsin = optarg;
 				break;
 			case 'd':
+			case 'f':
+			case 'D':
 				dopt[didx++] = optarg;
 				break;
 			case 'b':
@@ -2353,14 +2228,6 @@ int main(int argc, char **argv)
 				break;
 			case 'z':
 				holes = 1;
-				break;
-			case 'f':
-			case 'D':
-				devtable = xfopen(optarg, "r");
-				if (fstat(fileno(devtable), &sb) < 0)
-					perror_msg_and_die(optarg);
-				if (sb.st_size < 10)
-					error_msg_and_die("%s: not a proper device table file", optarg);
 				break;
 			case 'q':
 				squash_uids = 1;
@@ -2404,39 +2271,42 @@ int main(int argc, char **argv)
 		for(i = 0; i < didx; i++)
 		{
 			struct stat st;
+			FILE *fh;
 			char *pdir;
 			stat(dopt[i], &st);
 			switch(st.st_mode & S_IFMT)
 			{
+				case S_IFREG:
+					fh = xfopen(dopt[i], "r");
+					add2fs_from_file(fs, EXT2_ROOT_INO, fh, &stats);
+					fclose(fh);
+					break;
 				case S_IFDIR:
 					if(!(pdir = getcwd(0, GETCWD_SIZE)))
 						perror_msg_and_die(dopt[i]);
 					if(chdir(dopt[i]) < 0)
 						perror_msg_and_die(dopt[i]);
-					stats_from_dir(&stats);
+					add2fs_from_dir(fs, EXT2_ROOT_INO, &stats);
 					if(chdir(pdir) < 0)
 						perror_msg_and_die(pdir);
 					free(pdir);
 					break;
 				default:
-					error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
+					error_msg_and_die("%s in neither a file nor a directory", dopt[i]);
 			}
 		}
 	
-		if(devtable)
-			stats_from_dev_table(devtable, &stats);
-	
 		tmp_nbinodes = stats.ninodes + EXT2_FIRST_INO + 1;
-		tmp_nbblocks = stats.nblocks;
+		tmp_nbblocks = stats.nblocks; // FIXME: should add space taken by inodes too
 	
 		if(tmp_nbblocks > nbblocks)
 		{
-			printf("Number of blocks too low, increasing to %d\n",tmp_nbblocks);
+			printf("number of blocks too low, increasing to %d\n",tmp_nbblocks);
 			nbblocks = tmp_nbblocks;
 		}
 		if(tmp_nbinodes > nbinodes)
 		{
-			printf("Number of inodes too low, increasing to %d\n",tmp_nbinodes);
+			printf("number of inodes too low, increasing to %d\n",tmp_nbinodes);
 			nbinodes = tmp_nbinodes;
 		}
 		if(nbblocks == -1)
@@ -2455,12 +2325,17 @@ int main(int argc, char **argv)
 		stat(dopt[i], &st);
 		switch(st.st_mode & S_IFMT)
 		{
+			case S_IFREG:
+				fh = xfopen(dopt[i], "r");
+				add2fs_from_file(fs, EXT2_ROOT_INO, fh, NULL);
+				fclose(fh);
+				break;
 			case S_IFDIR:
 				if(!(pdir = getcwd(0, GETCWD_SIZE)))
 					perror_msg_and_die(dopt[i]);
 				if(chdir(dopt[i]) < 0)
 					perror_msg_and_die(dopt[i]);
-				add2fs_from_dir(fs, EXT2_ROOT_INO);
+				add2fs_from_dir(fs, EXT2_ROOT_INO, NULL);
 				if(chdir(pdir) < 0)
 					perror_msg_and_die(pdir);
 				free(pdir);
@@ -2473,8 +2348,6 @@ int main(int argc, char **argv)
 		for(i = 1; i < fs->sb.s_blocks_count; i++)
 			if(!allocated(GRP_GET_BLOCK_BITMAP(fs,i),GRP_BBM_OFFSET(fs,i)))
 				memset(get_blk(fs, i), emptyval, BLOCKSIZE);
-	if(devtable)
-		parse_device_table(fs, devtable);
 	if(verbose)
 		print_fs(fs);
 	for(i = 0; i < gidx; i++)
@@ -2501,5 +2374,6 @@ int main(int argc, char **argv)
 	}
 	else
 		dump_fs(fs, stdout, bigendian);
+	free_fs(fs);
 	return 0;
 }
