@@ -1484,10 +1484,14 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 			allocate(ibm, j);
 	}
 
-	// make root inode and directory
-	/* We have groups now. Add the root filesystem in group 0 */
-	/* Also increment the directory count for group 0 */
-	fs->gd[0].bg_free_inodes_count--;
+	/* We have groups now. Add the root filesystem in group 0  */
+	/* Also allocate the system inodes in group 0 and update   */
+	/* directory count and inode count for group 0             */
+	ibm = get_blk(fs,fs->gd[0].bg_inode_bitmap);
+	for(j = 1; j < EXT2_FIRST_INO; j++) {
+		allocate(ibm, j);
+		fs->gd[0].bg_free_inodes_count--;
+	}
 	fs->gd[0].bg_used_dirs_count = 1;
 	itab0 = (inode *)get_blk(fs,fs->gd[0].bg_inode_table);
 	itab0[EXT2_ROOT_INO-1].i_mode = FM_IFDIR | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
