@@ -27,6 +27,7 @@
 // 			Bugfix: ANSI scanf for non-GNU C	xavier.gueguen@col.bsf.alcatel.fr
 // 	28 Jun 2001	Bugfix: getcwd differs for Solaris/GNU	mike@sowbug.com
 // 	 8 Mar 2002	Bugfix: endianness swap of x-indirects
+// 	23 Mar 2002	Bugfix: test for IFCHR or IFBLK was flawed
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
@@ -984,20 +985,20 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 {
 	int i;
 	int nblk = nod->i_blocks / INOBLK;
-	if((nod->i_size && !nblk) || (nod->i_mode & (FM_IFBLK | FM_IFCHR)))
-		for(i = 0; i <= EXT2_NDIR_BLOCKS; i++)
+	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
+		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
 			nod->i_block[i] = swab32(nod->i_block[i]);
 	if(nblk <= EXT2_IND_BLOCK)
 		return;
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
-	nod->i_block[EXT2_IND_BLOCK] = swab32(nod->i_block[EXT2_IND_BLOCK]);
+	//nod->i_block[EXT2_IND_BLOCK] = swab32(nod->i_block[EXT2_IND_BLOCK]);
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
 		return;
 	for(i = 0; i < BLOCKSIZE/4; i++)
 		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + i)
 			swap_block(get_blk(fs, ((uint32*)get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]))[i]));
 	swap_block(get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]));
-	nod->i_block[EXT2_DIND_BLOCK] = swab32(nod->i_block[EXT2_DIND_BLOCK]);
+	//nod->i_block[EXT2_DIND_BLOCK] = swab32(nod->i_block[EXT2_DIND_BLOCK]);
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
 		return;
 	errexit("too big file on the filesystem");
@@ -1007,7 +1008,7 @@ void swap_badblocks(filesystem *fs, inode *nod)
 {
 	int i;
 	int nblk = nod->i_blocks / INOBLK;
-	if((nod->i_size && !nblk) || (nod->i_mode & (FM_IFBLK | FM_IFCHR)))
+	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
 		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
 			nod->i_block[i] = swab32(nod->i_block[i]);
 	if(nblk <= EXT2_IND_BLOCK)
