@@ -2408,13 +2408,16 @@ int main(int argc, char **argv)
 		{
 			struct stat st;
 			FILE *fh;
-			char *pdir;
+			char *pdir, *pdest;
+			uint32 nod = EXT2_ROOT_INO;
+			if((pdest = strchr(dopt[i], ':')))
+				*pdest = 0;
 			stat(dopt[i], &st);
 			switch(st.st_mode & S_IFMT)
 			{
 				case S_IFREG:
 					fh = xfopen(dopt[i], "r");
-					add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, 0, &stats);
+					add2fs_from_file(fs, nod, fh, squash_uids, squash_perms, 0, &stats);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -2422,7 +2425,7 @@ int main(int argc, char **argv)
 						perror_msg_and_die(dopt[i]);
 					if(chdir(dopt[i]) < 0)
 						perror_msg_and_die(dopt[i]);
-					add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, 0, &stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, 0, &stats);
 					if(chdir(pdir) < 0)
 						perror_msg_and_die(pdir);
 					free(pdir);
@@ -2430,6 +2433,8 @@ int main(int argc, char **argv)
 				default:
 					error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
 			}
+			if(pdest)
+				*pdest = ':';
 		}
 	
 		tmp_nbinodes = stats.ninodes + EXT2_FIRST_INO + 1;
@@ -2459,13 +2464,20 @@ int main(int argc, char **argv)
 	{
 		struct stat st;
 		FILE *fh;
-		char *pdir;
+		char *pdir, *pdest;
+		uint32 nod = EXT2_ROOT_INO;
+		if((pdest = strchr(dopt[i], ':')))
+		{
+			*(pdest++) = 0;
+			if(!(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
+				error_msg_and_die("path %s not found in filesystem", pdest);
+		}
 		stat(dopt[i], &st);
 		switch(st.st_mode & S_IFMT)
 		{
 			case S_IFREG:
 				fh = xfopen(dopt[i], "r");
-				add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, fs_timestamp, NULL );
+				add2fs_from_file(fs, nod, fh, squash_uids, squash_perms, fs_timestamp, NULL );
 				fclose(fh);
 				break;
 			case S_IFDIR:
@@ -2473,7 +2485,7 @@ int main(int argc, char **argv)
 					perror_msg_and_die(dopt[i]);
 				if(chdir(dopt[i]) < 0)
 					perror_msg_and_die(dopt[i]);
-				add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, fs_timestamp, NULL );
+				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, NULL );
 				if(chdir(pdir) < 0)
 					perror_msg_and_die(pdir);
 				free(pdir);
