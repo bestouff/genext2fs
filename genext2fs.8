@@ -37,8 +37,11 @@ Use this image as a starting point
 .BI -d \ directory
 Add this directory as source
 .TP
-.BI -f \ file
-Add nodes (e.g. devices) from this spec file
+.BI -f \ FILE
+.TP
+.BI -D \ FILE
+Uses the named FILE as a device table file, to create device 
+nodes and directories "on the fly".
 .TP
 .BI -b \ blocks
 Size in blocks
@@ -57,6 +60,15 @@ Fill unallocated blocks with value
 .TP
 .BI -z
 Make files with holes
+.TP
+.BI -U
+Squash owners making all files be owned by root
+.TP
+.BI -P
+Squash permissions on all files
+.TP
+.BI -q
+Squash permissions and owners (same as -P -U)
 .TP
 .BI -v
 Print resulting filesystem structure
@@ -80,24 +92,32 @@ usual.
 
 .EX
 .B
- genext2fs -b 1024 -d src -f dev.txt flashdisk.img
+ genext2fs -b 1024 -d src -D device_table.txt flashdisk.img
 .EE
 
 This example builds a filesystem from all the files in 
 .I src
-, then device nodes are created based on the contents of the device file
+, then device nodes are created based on the content the device_table file
 .I dev.txt.
 An example device file follows:
 
 .EX
- drwx            /dev
- crw-    10,190  /dev/lcd
- brw-    1,0     /dev/ram0
+ #<name>		<type>	<mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
+ /dev		d	755	0	0	-	-	-	-	-
+ /dev/mem	c	640	0	0	1	1	0	0	-
+ /dev/tty	c	666	0	0	5	0	0	0	-
+ /dev/tty	c	666	0	0	4	0	0	1	6
+ /dev/loop	b	640	0	0	7	0	0	1	2
+ /dev/hda	b	640	0	0	3	0	0	0	-
+ /dev/hda	b	640	0	0	3	1	1	1	16
 .EE
 
-This device list builds the /dev directory, a character device
-node /dev/lcd (major 10, minor 190) and a block device node
-/dev/ram0 (major 1, minor 0)
+This device table creates the /dev directory, a character device
+node /dev/mem (major 1, minor 1), it also creates /dev/tty, 
+/dev/tty[0-5], /dev/loop[0-1], /dev/hda, and /dev/hda0 to /dev/hda15
+.SH BUGS
+\fBgenext2fs\fP does not support hard links.  Hard links present in the input
+tree will be represented as separate files in the ext2 image.
 
 .SH SEE ALSO
 .BR mkfs (8),

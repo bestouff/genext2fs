@@ -1,3 +1,4 @@
+/* vi: set sw=8 ts=8: */
 // genext2fs.c
 //
 // ext2 filesystem generator for embedded systems
@@ -35,16 +36,20 @@
 // 			Copyright (C) 2002 Ixia communications
 // 	14 Oct 2002	Added support for groups		vsundar@ixiacom.com
 // 			Copyright (C) 2002 Ixia communications
+//     5 Jan 2003  Bugfixes: reserved inodes should be set vsundar@usc.edu
+//             only in the first group; directory names
+//             need to be null padded at the end; and 
+//             number of blocks per group should be a 
+//             multiple of 8. Updated md5 values. 
+//     6 Jan 2003  Erik Andersen <andersee@debian.org> added
+//                         mkfs.jffs2 compatible device table support,
+//                         along with -q, -P, -U
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
 // as a normal (non-root) user. It doesn't require you to mount
 // the image file to copy files on it. It doesn't even require
 // you to be the superuser to make device nodes.
-//
-// Warning ! `genext2fs' has been designed for embedded
-// systems. As such, it will generate a filesystem for single-user
-// usage: all files/directories/etc... will belong to UID/GID 0
 //
 // Example usage:
 //
@@ -54,21 +59,14 @@
 // a new ext2 filesystem image. You can then mount the floppy as
 // usual.
 //
-// # genext2fs -b 1024 -d builddir -f devices.txt flashdisk.img
+// # genext2fs -b 1024 -d builddir -D device_table.txt flashdisk.img
 //
 // This one would build a filesystem from all the files in builddir,
-// then would read a devices list and make apropriate nodes. The
-// format for the device list is:
-//
-// drwx            /dev
-// crw-    10,190  /dev/lcd
-// brw-    1,0     /dev/ram0
-// 
-// This device list builds the /dev directory, a character device
-// node /dev/lcd (major 10, minor 190) and a block device node
-// /dev/ram0 (major 1, minor 0)
+// then would read the device_table.txt file and make apropriate nodes.
+// The format for the device table file is covered in detail in the sample
+// device_table.txt file provided with the genext2fs source.
 
-
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,7 +75,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <assert.h>
-
+#include <time.h>
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 
 
 
@@ -461,24 +462,111 @@ void swap_block(block b)
 #undef utdecl32
 
 char * argv0;
+static char * app_name;
+static int squash_uids = 0;
+static int squash_perms = 0;
+static const char *const memory_exhausted = "memory exhausted";
 
 // error (un)handling
-inline void errexit(const char *fmt, ...)
+static void verror_msg(const char *s, va_list p)
 {
-	va_list ap;
-	fprintf(stderr, "%s: ", argv0);
-	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-	fprintf(stderr, "\n");
-	exit(1);
+	fflush(stdout);
+	fprintf(stderr, "%s: ", app_name);
+	vfprintf(stderr, s, p);
+}
+static void error_msg(const char *s, ...)
+{
+	va_list p;
+	va_start(p, s);
+	verror_msg(s, p);
+	va_end(p);
+	putc('\n', stderr);
 }
 
-inline void pexit(const char * fname)
+static void error_msg_and_die(const char *s, ...)
 {
-	fprintf(stderr, "%s: ", argv0);
-	perror(fname);
-	exit(1);
+	va_list p;
+	va_start(p, s);
+	verror_msg(s, p);
+	va_end(p);
+	putc('\n', stderr);
+	exit(EXIT_FAILURE);
+}
+
+static void vperror_msg(const char *s, va_list p)
+{
+	int err = errno;
+	if (s == 0)
+		s = "";
+	verror_msg(s, p);
+	if (*s)
+		s = ": ";
+	fprintf(stderr, "%s%s\n", s, strerror(err));
+}
+#if 0
+static void perror_msg(const char *s, ...)
+{
+	va_list p;
+	va_start(p, s);
+	vperror_msg(s, p);
+	va_end(p);
+}
+#endif
+static void perror_msg_and_die(const char *s, ...)
+{
+	va_list p;
+	va_start(p, s);
+	vperror_msg(s, p);
+	va_end(p);
+	exit(EXIT_FAILURE);
+}
+
+static FILE *xfopen(const char *path, const char *mode)
+{
+	FILE *fp;
+	if ((fp = fopen(path, mode)) == NULL)
+		perror_msg_and_die("%s", path);
+	return fp;
+}
+
+static char *xstrdup(const char *s)
+{
+	char *t;
+
+	if (s == NULL)
+		return NULL;
+	t = strdup(s);
+	if (t == NULL)
+		error_msg_and_die(memory_exhausted);
+	return t;
+}
+
+extern void *xrealloc(void *ptr, size_t size)
+{
+	ptr = realloc(ptr, size);
+	if (ptr == NULL && size != 0)
+		error_msg_and_die(memory_exhausted);
+	return ptr;
+}
+
+static char *xreadlink(const char *path)
+{
+	static const int GROWBY = 80; /* how large we will grow strings by */
+
+	char *buf = NULL;
+	int bufsize = 0, readsize = 0;
+
+	do {
+		buf = xrealloc(buf, bufsize += GROWBY);
+		readsize = readlink(path, buf, bufsize); /* 1st try */
+		if (readsize == -1) {
+			perror_msg_and_die("%s:%s", app_name, path);
+		}
+	}
+	while (bufsize < readsize + 1);
+
+	buf[readsize] = '\0';
+	return buf;
 }
 
 // printf helper macro
@@ -570,11 +658,11 @@ uint32 alloc_blk(filesystem *fs, uint32  nod)
 		grp--;
 	}
 	if (!bk)
-		errexit("couldn't allocate a block (no free space)");
+		error_msg_and_die("couldn't allocate a block (no free space)");
 	if(!(fs->gd[grp].bg_free_blocks_count--))
-		errexit("group descr %d. free blocks count == 0 (corrupted fs?)",grp);
+		error_msg_and_die("group descr %d. free blocks count == 0 (corrupted fs?)",grp);
 	if(!(fs->sb.s_free_blocks_count--))
-		errexit("superblock free blocks count == 0 (corrupted fs?)");
+		error_msg_and_die("superblock free blocks count == 0 (corrupted fs?)");
 	return fs->sb.s_blocks_per_group*grp + bk;
 }
 
@@ -601,11 +689,11 @@ uint32 alloc_nod(filesystem *fs)
 			best_group = grp;
 	}
 	if (!(nod = allocate(get_blk(fs,fs->gd[best_group].bg_inode_bitmap),0)))
-		errexit("couldn't allocate an inode (no free inode)");
+		error_msg_and_die("couldn't allocate an inode (no free inode)");
 	if(!(fs->gd[best_group].bg_free_inodes_count--))
-		errexit("group descr. free blocks count == 0 (corrupted fs?)");
+		error_msg_and_die("group descr. free blocks count == 0 (corrupted fs?)");
 	if(!(fs->sb.s_free_inodes_count--))
-		errexit("superblock free blocks count == 0 (corrupted fs?)");
+		error_msg_and_die("superblock free blocks count == 0 (corrupted fs?)");
 	return fs->sb.s_inodes_per_group*best_group+nod;
 }
 
@@ -803,14 +891,14 @@ uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
 	}
 	else
-		errexit("file too big ! blocks list for inode %d extends past triple indirect blocks!", nod);
+		error_msg_and_die("file too big !"); 
 	/* End change for walking triple indirection */
 
 	if(*bkref)
 	{
 		bw->bnum++;
 		if(!allocated(GRP_GET_BLOCK_BITMAP(fs,*bkref), GRP_BBM_OFFSET(fs,*bkref)))
-			errexit("[block %d of inode %d is unallocated !]", *bkref, nod);
+			error_msg_and_die("[block %d of inode %d is unallocated !]", *bkref, nod);
 	}
 	if(extend)
 		get_nod(fs, nod)->i_blocks = bw->bnum * INOBLK;
@@ -848,23 +936,39 @@ void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 }
 
 // link an entry (inode #) to a directory
-void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
+void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 mode, uid_t uid, gid_t gid, time_t ctime)
 {
 	blockwalker bw;
 	uint32 bk;
 	uint8 *b;
 	directory *d;
 	int reclen, nlen;
-	if((get_nod(fs, dnod)->i_mode & FM_IFMT) != FM_IFDIR)
-		errexit("can't add '%s' to a non-directory", name);
+	inode *node;
+	inode *pnode;
+
+	/* Squash all permissions so files are owned by root 
+	 * and file permissions have group/other perms removed */
+	if (squash_uids) {
+		uid = gid = 0;
+	}
+	if (squash_perms) {
+		if (!S_ISLNK(mode)) {
+			mode &= ~(S_IWGRP | S_IWOTH);
+			mode &= ~(S_ISUID | S_ISGID);
+		}
+	}
+
+	pnode = get_nod(fs, dnod);
+	if(!S_ISDIR(pnode->i_mode))
+		error_msg_and_die("can't add '%s' to a non-directory", name);
 	if(!*name)
-		errexit("bad name '%s' (not meaningful)", name);
+		error_msg_and_die("bad name '%s' (not meaningful)", name);
 	if(strchr(name, '/'))
-		errexit("bad name '%s' (contains a slash)", name);
+		error_msg_and_die("bad name '%s' (contains a slash)", name);
 	nlen = strlen(name);
 	reclen = sizeof(directory) + rndup(nlen, 4);
 	if(reclen > BLOCKSIZE)
-		errexit("bad name '%s' (too long)", name);
+		error_msg_and_die("bad name '%s' (too long)", name);
 	init_bw(fs, dnod, &bw);
 	while((bk = walk_bw(fs, dnod, &bw, 0, 0)) != WALK_END) // for all blocks in dir
 	{
@@ -876,9 +980,16 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 			if((!d->d_inode) && (d->d_rec_len >= reclen))
 			{
 				d->d_inode = nod;
-				get_nod(fs, nod)->i_links_count++;
+				node = get_nod(fs, nod);
+				node->i_links_count++;
 				d->d_name_len = nlen;
-				strncpy(d->d_name, name, nlen);
+				strncpy(d->d_name, name, rndup(nlen,4));
+				node->i_mode = mode;
+				node->i_uid = uid;
+				node->i_gid = gid;
+				node->i_atime = ctime;
+				node->i_ctime = ctime;
+				node->i_mtime = ctime;
 				return;
 			}
 			// if entry with enough room (last one?), shrink it & use it
@@ -890,9 +1001,16 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 				d = (directory*) (((int8*)d) + d->d_rec_len);
 				d->d_rec_len = reclen;
 				d->d_inode = nod;
-				get_nod(fs, nod)->i_links_count++;
+				node = get_nod(fs, nod);
+				node->i_links_count++;
 				d->d_name_len = nlen;
-				strncpy(d->d_name, name, nlen);
+				strncpy(d->d_name, name, rndup(nlen,4));
+				node->i_mode = mode;
+				node->i_uid = uid;
+				node->i_gid = gid;
+				node->i_atime = ctime;
+				node->i_ctime = ctime;
+				node->i_mtime = ctime;
 				return;
 			}
 		}
@@ -901,10 +1019,17 @@ void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	b = get_workblk();
 	d = (directory*)b;
 	d->d_inode = nod;
-	get_nod(fs, nod)->i_links_count++;
+	node = get_nod(fs, nod);
+	node->i_links_count++;
 	d->d_rec_len = BLOCKSIZE;
 	d->d_name_len = nlen;
-	strncpy(d->d_name, name, nlen);
+	strncpy(d->d_name, name, rndup(nlen,4));
+	node->i_mode = mode;
+	node->i_uid = uid;
+	node->i_gid = gid;
+	node->i_atime = ctime;
+	node->i_ctime = ctime;
+	node->i_mtime = ctime;
 	extend_blk(fs, dnod, b, 1);
 	get_nod(fs, dnod)->i_size += BLOCKSIZE;
 	free_workblk(b);
@@ -932,7 +1057,7 @@ uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
 // find the inode of a full path
 uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 {
-	char *p, *n, *n2 = strdup(name);
+	char *p, *n, *n2 = xstrdup(name);
 	n = n2;
 	while(*n == '/')
 	{
@@ -955,27 +1080,32 @@ uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 }
 
 // make a full-fledged directory (i.e. with "." & "..")
-uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode)
+uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
+	uid_t uid, gid_t gid, time_t ctime)
 {
 	uint32 nod;
 	if((nod = find_dir(fs, parent_nod, name)))
 		return nod;
        	nod = alloc_nod(fs);
-	get_nod(fs, nod)->i_mode = FM_IFDIR | mode;
-	add2dir(fs, parent_nod, nod, name);
-	add2dir(fs, nod, nod, ".");
-	add2dir(fs, nod, parent_nod, "..");
+	if (!(mode & FM_IFDIR))
+		mode |= FM_IFDIR;
+	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
+	add2dir(fs, nod, nod, ".", mode, uid, gid, ctime);
+	add2dir(fs, nod, parent_nod, "..", mode, uid, gid, ctime);
 	fs->gd[GRP_GROUP_OF_INODE(fs,nod)].bg_used_dirs_count++;
 	return nod;
 }
 
 // make a symlink
-uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 * b)
+uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size,
+	uint8 * b, uid_t uid, gid_t gid, time_t ctime)
 {
+	uint32 mode;
 	uint32 nod = alloc_nod(fs);
+	mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
 	get_nod(fs, nod)->i_mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO;
 	get_nod(fs, nod)->i_size = size;
-	add2dir(fs, parent_nod, nod, name);
+	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
 	{
 		strncpy((char*)get_nod(fs, nod)->i_block, (char*)b, size);
@@ -986,15 +1116,15 @@ uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t siz
 }
 
 // make a file from a FILE*
-uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f)
+uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, time_t ctime)
 {
 	uint8 * b;
 	uint32 nod = alloc_nod(fs);
-	get_nod(fs, nod)->i_mode = FM_IFREG | mode;
+	mode |= FM_IFREG;
 	get_nod(fs, nod)->i_size = size;
-	add2dir(fs, parent_nod, nod, name);
+	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
-		errexit("not enough mem to read file '%s'", name);
+		error_msg_and_die("not enough mem to read file '%s'", name);
 	memset(b, 0,rndup(size, BLOCKSIZE));
 	if(f)
 		fread(b, size, 1, f);
@@ -1009,6 +1139,15 @@ uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mod
 uint32 get_mode(struct stat *st)
 {
 	uint32 mode = 0;
+
+	/* Squash file permissions as needed */
+	if (squash_perms) {
+		if (!S_ISLNK(mode)) {
+			st->st_mode &= ~(S_IWGRP | S_IWOTH);
+			st->st_mode &= ~(S_ISUID | S_ISGID);
+		}
+	}
+
 	if(st->st_mode & S_IRUSR)
 		mode |= FM_IRUSR | FM_IRGRP | FM_IROTH;
 	if(st->st_mode & S_IWUSR)
@@ -1018,95 +1157,22 @@ uint32 get_mode(struct stat *st)
 	return mode;
 }
 
-// retrieves a mode info from a string
-uint32 get_modestr(const char *p)
-{
-	uint32 mode = 0;
-	if(p[0] == 'r')
-		mode |= FM_IRUSR | FM_IRGRP | FM_IROTH;
-	if(p[1] == 'w')
-		mode |= FM_IWUSR | FM_IWGRP | FM_IWOTH;
-	if(p[2] == 'x' || p[2] == 's')
-		mode |= FM_IXUSR | FM_IXGRP | FM_IXOTH;
-	return mode;
-}
-
 // basename of a path - free me
 char * basename(const char * fullpath)
 {
 	char * p = strrchr(fullpath, '/');
-	return strdup(p ? p + 1 : fullpath);
+	return xstrdup(p ? p + 1 : fullpath);
 }
 
 // dirname of a path - free me
 char * dirname(const char * fullpath)
 {
-	char * p, * n = strdup(fullpath);
+	char * p, * n = xstrdup(fullpath);
 	if((p = strrchr(n, '/')))
 		*(p+1) = 0;
 	else
 		*n = 0;
 	return n;
-}
-
-// adds entries to the filesystem from a text file
-void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh)
-{
-	uint32 mode;
-	uint32 nod, nod2;
-	char cmod[11], *path, *name, *dir;
-	int major, minor;
-	while(fscanf(fh, "%10s", cmod))
-	{
-		if(feof(fh))
-			break;
-		mode = get_modestr(cmod + 1);
-		switch(*cmod)
-		{
-			case 'd':
-				fscanf(fh, "%" SCANF_PREFIX "s\n", SCANF_STRING(path));
-				break;
-			case 'c':
-				mode |= FM_IFCHR;
-				fscanf(fh, "%i, %i %" SCANF_PREFIX "s\n", &major, &minor, SCANF_STRING(path));
-				break;
-			case 'b':
-				mode |= FM_IFBLK;
-				fscanf(fh, "%i, %i %" SCANF_PREFIX "s\n", &major, &minor, SCANF_STRING(path));
-				break;
-			case '#':
-				while(fgetc(fh) != '\n');
-				continue;
-			default:
-				errexit("malformed text input file");
-		}
-		name = basename(path);
-		dir = dirname(path);
-		free(path);
-		if(!(nod = find_path(fs, this_nod, dir)))
-			errexit("can't find directory '%s' to create '%s''", dir, name);
-		free(dir);
-		if((!strcmp(name, ".")) || (!strcmp(name, "..")))
-		{
-			free(name);
-			continue;
-		}
-		switch(*cmod)
-		{
-			case 'd':
-				mkdir_fs(fs, nod, name, mode);
-				break;
-			case 'c':
-			case 'b':
-				nod2 = alloc_nod(fs);
-				get_nod(fs, nod2)->i_mode = mode;
-				((uint8*)get_nod(fs, nod2)->i_block)[0] = minor;
-				((uint8*)get_nod(fs, nod2)->i_block)[1] = major;
-				add2dir(fs, nod, nod2, name);
-				break;
-		}
-		free(name);
-	}
 }
 
 // adds a tree of entries to the filesystem from current dir
@@ -1119,7 +1185,7 @@ void add2fs_from_dir(filesystem *fs, uint32 this_nod)
 	struct stat st;
 	uint8 *b;
 	if(!(dh = opendir(".")))
-		pexit(".");
+		perror_msg_and_die(".");
 	while((dent = readdir(dh)))
 	{
 		if((!strcmp(dent->d_name, ".")) || (!strcmp(dent->d_name, "..")))
@@ -1133,31 +1199,27 @@ void add2fs_from_dir(filesystem *fs, uint32 this_nod)
 				get_nod(fs, nod)->i_mode = (((st.st_mode & S_IFMT) == S_IFCHR) ? FM_IFCHR : FM_IFBLK) | get_mode(&st);
 				((uint8*)get_nod(fs, nod)->i_block)[0] = (st.st_rdev & 0xff);
 				((uint8*)get_nod(fs, nod)->i_block)[1] = (st.st_rdev >> 8);
-				add2dir(fs, this_nod, nod, dent->d_name);
+				add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
 				break;
 			case S_IFLNK:
-				if(!(b = (uint8*)malloc(rndup(st.st_size, BLOCKSIZE))))
-					errexit("out of memory");
-				if(readlink(dent->d_name, (char*)b, st.st_size) < 0)
-					pexit(dent->d_name);
-				mklink_fs(fs, this_nod, dent->d_name, st.st_size, b);
+				b = xreadlink(dent->d_name);
+				mklink_fs(fs, this_nod, dent->d_name, st.st_size, b, st.st_uid, st.st_gid, st.st_ctime);
 				free(b);
 				break;
 			case S_IFREG:
-				if(!(fh = fopen(dent->d_name, "r")))
-					pexit(dent->d_name);
-				mkfile_fs(fs, this_nod, dent->d_name, get_mode(&st), st.st_size, fh);
+				fh = xfopen(dent->d_name, "r");
+				mkfile_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, st.st_ctime);
 				fclose(fh);
 				break;
 			case S_IFDIR:
-				nod = mkdir_fs(fs, this_nod, dent->d_name, get_mode(&st));
+				nod = mkdir_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
 				if(chdir(dent->d_name) < 0)
-					pexit(dent->d_name);
+					perror_msg_and_die(dent->d_name);
 				add2fs_from_dir(fs, nod);
 				chdir("..");
 				break;
 			default:
-				fprintf(stderr, "ignoring entry %s", dent->d_name);
+				error_msg("ignoring entry %s", dent->d_name);
 		}
 	}
 	closedir(dh);
@@ -1333,7 +1395,7 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	inode *itab0;
 	
 	if(nbblocks < 16) // totally arbitrary
-		errexit("too small filesystem");
+		error_msg_and_die("too small filesystem");
 
 	/* nbblocks is the total number of blocks in the system. First 
 	 * calculate how much overhead blocks - inode table blocks,bitmap 
@@ -1365,7 +1427,7 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	
 
 	if(!(fs = (filesystem*)calloc(nbblocks, BLOCKSIZE)))
-		errexit("not enough memory for filesystem");
+		error_msg_and_die("not enough memory for filesystem");
 
 	// create the superblock for an empty filesystem
 	fs->sb.s_inodes_count = nbinodes_per_group * nbgroups;
@@ -1448,9 +1510,14 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	// make lost+found directory and reserve blocks
 	if(fs->sb.s_r_blocks_count)
 	{
-		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU | FM_IRWXG | FM_IRWXO);
+		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH, 0, 0, time(NULL));
 		memset(b, 0, BLOCKSIZE);
 		((directory*)b)->d_rec_len = BLOCKSIZE;
+		/* We run into problems with e2fsck if directory lost+found grows
+		 * bigger than this. Need to find out why this happens - sundar
+		 */
+		if (fs->sb.s_r_blocks_count > 2049 ) 
+			fs->sb.s_r_blocks_count=2049;
 		for(i = 1; i < fs->sb.s_r_blocks_count; i++)
 			extend_blk(fs, nod, b, 1);
 		get_nod(fs, nod)->i_size = fs->sb.s_r_blocks_count * BLOCKSIZE;
@@ -1471,24 +1538,24 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 // loads a filesystem from disk
 filesystem * load_fs(FILE * fh, int swapit)
 {
-	size_t fssize;
+	size_t fssize = 0;
 	filesystem *fs;
 	if((fseek(fh, 0, SEEK_END) < 0) || ((fssize = ftell(fh)) < 0))
-		pexit("input filesystem image");
+		perror_msg_and_die("input filesystem image");
 	rewind(fh);
 	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
 	if(fssize < 16) // totally arbitrary
-		errexit("too small filesystem");
-	//if(fssize > BLOCKS_PER_GROUP) // I build only one group
-	//	errexit("too big filesystem");
+		error_msg_and_die("too small filesystem");
+	/*if(fssize > BLOCKS_PER_GROUP) // I build only one group
+		error_msg_and_die("too big filesystem"); */
 	if(!(fs = (filesystem*)calloc(fssize, BLOCKSIZE)))
-		errexit("not enough memory for filesystem");
+		error_msg_and_die("not enough memory for filesystem");
 	if(fread(fs, BLOCKSIZE, fssize, fh) != fssize)
-		pexit("input filesystem image");
+		perror_msg_and_die("input filesystem image");
 	if(swapit)
 		swap_badfs(fs);
 	if(fs->sb.s_rev_level || (fs->sb.s_magic != EXT2_MAGIC_NUMBER))
-		errexit("not a suitable ext2 filesystem");
+		error_msg_and_die("not a suitable ext2 filesystem");
 	return fs;
 }
 
@@ -1531,9 +1598,9 @@ void write_blocks(filesystem *fs, uint32 nod, FILE* f)
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 	{
 		if(fsize <= 0)
-			errexit("wrong size while saving inode %d", nod);
+			error_msg_and_die("wrong size while saving inode %d", nod);
 		if(fwrite(get_blk(fs, bk), (fsize > BLOCKSIZE) ? BLOCKSIZE : fsize, 1, f) != 1)
-			errexit("error while saving inode %d", nod);
+			error_msg_and_die("error while saving inode %d", nod);
 		fsize -= BLOCKSIZE;
 	}
 }
@@ -1551,7 +1618,7 @@ void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 	{
 		int i, j;
 		if(fsize <= 0)
-			errexit("wrong size while saving inode %d", nod);
+			error_msg_and_die("wrong size while saving inode %d", nod);
 		b = get_blk(fs, bk);
 		for(i = 0; i < 64; i++)
 		{
@@ -1741,6 +1808,7 @@ void print_inode(filesystem *fs, uint32 nod)
 		default:
 			list_blocks(fs, nod);
 	}
+	printf("Done with inode %d\n",nod);
 }
 
 // describes various fields in a filesystem
@@ -1786,31 +1854,234 @@ void dump_fs(filesystem *fs, FILE * fh, int swapit)
 	if(swapit)
 		swap_goodfs(fs);
 	if(fwrite(fs, BLOCKSIZE, nbblocks, fh) < nbblocks)
-		pexit("output filesystem image");
+		perror_msg_and_die("output filesystem image");
 	if(swapit)
 		swap_badfs(fs);
 }
+
+/*  device table entries take the form of:
+    <path>	<type> <mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
+    /dev/mem     c    640       0       0         1       1       0     0         -
+
+    type can be one of: 
+	f	A regular file
+	d	Directory
+	c	Character special device file
+	b	Block special device file
+	p	Fifo (named pipe)
+
+    I don't bother with symlinks (permissions are irrelevant), hard
+    links (special cases of regular files), or sockets (why bother).
+
+    Regular files must exist in the target root directory.  If a char,
+    block, fifo, or directory does not exist, it will be created.
+*/
+static int interpret_table_entry(filesystem *fs, char *line)
+{
+	char type, *name = NULL, *tmp, *dir, *bname;
+	unsigned long mode = 0755, uid = 0, gid = 0, major = 0, minor = 0;
+	unsigned long start = 0, increment = 1, count = 0;
+	inode *entry;
+	uint32 nod, parent;
+
+	if (sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
+				SCANF_STRING(name), &type, &mode, &uid, &gid, &major, &minor,
+				&start, &increment, &count) < 0) 
+	{
+		return 1;
+	}
+
+	if (!strcmp(name, "/")) {
+		error_msg_and_die("Device table entries require absolute paths");
+	}
+
+	/* Check if this file already exists... */
+	switch (type) {
+		case 'd':
+			mode |= S_IFDIR;
+			break;
+		case 'f':
+			mode |= S_IFREG;
+			break;
+		case 'p':
+			mode |= S_IFIFO;
+			break;
+		case 'c':
+			mode |= S_IFCHR;
+			break;
+		case 'b':
+			mode |= S_IFBLK;
+			break;
+		default:
+			error_msg_and_die("Unsupported file type");
+	}
+	nod = 0;
+	if (count==0)
+		nod = find_path(fs, EXT2_ROOT_INO, name);
+	if (nod) {
+		/* Ok, we just need to fixup an existing entry 
+		 * and we will be all done... */
+		entry = get_nod(fs, nod);
+		entry->i_uid = uid;
+		entry->i_gid = gid;
+		entry->i_mode = mode;
+		if (major) {
+			dev_t rdev = makedev(major, minor);
+			((uint8*)entry->i_block)[0] = (rdev & 0xff);
+			((uint8*)entry->i_block)[1] = (rdev >> 8);
+		}
+	} else {
+		/* Try and find our parent now */
+		tmp = xstrdup(name);
+		dir = dirname(tmp);
+		parent = find_path(fs, EXT2_ROOT_INO, dir);
+		free(tmp);
+		if (!parent) {
+			error_msg ("skipping device_table entry '%s': no parent directory!", name);
+			free(name);
+			return 1;
+		}
+
+		tmp = xstrdup(name);
+		bname = xstrdup(basename(tmp));
+		free(tmp);
+		switch (type) {
+			case 'd':
+				mkdir_fs(fs, parent, bname, mode|FM_IFDIR, uid, gid, time(NULL));
+				break;
+			case 'f':
+#if 0
+				{
+					// This is a bit odd.. This will try to include
+					// the file of the same name from your _build_
+					// system...  Probably a very bad idea....
+					struct stat st;
+					FILE *fh = xfopen(name, "r");
+					lstat(name, &st);
+					mkfile_fs(fs, parent, bname, mode|FM_IFREG, st.st_size, fh, uid, gid, st.st_ctime);
+					fclose(fh);
+				}
+#else
+				error_msg("ignoring entry %s", name);
+#endif
+				break;
+			case 'p':
+				error_msg("ignoring entry %s", name);
+				break;
+			case 'c':
+			case 'b':
+				if (count > 0) {
+					dev_t rdev;
+					char *dname;
+					unsigned long i;
+					for (i = start; i < count; i++) {
+						asprintf(&dname, "%s%lu", bname, i);
+						nod = find_path(fs, EXT2_ROOT_INO, dname);
+						if (nod) {
+							/* We just need to fixup an existing entry */ 
+							entry = get_nod(fs, nod);
+						} else {
+							nod = alloc_nod(fs);
+							add2dir(fs, parent, nod, dname, mode, uid, gid, time(NULL));
+							entry = get_nod(fs, nod);
+						}
+						entry->i_uid = uid;
+						entry->i_gid = gid;
+						entry->i_mode = mode;
+						rdev = makedev(major, minor + (i * increment - start));
+						((uint8*)entry->i_block)[0] = (rdev & 0xff);
+						((uint8*)entry->i_block)[1] = (rdev >> 8);
+						free(dname);
+					}
+				} else {
+					dev_t rdev = makedev(major, minor);
+					nod = alloc_nod(fs);
+					add2dir(fs, parent, nod, bname, mode, uid, gid, time(NULL));
+					entry = get_nod(fs, nod);
+					((uint8*)entry->i_block)[0] = (rdev & 0xff);
+					((uint8*)entry->i_block)[1] = (rdev >> 8);
+				}
+				break;
+			default:
+				error_msg_and_die("Unsupported file type");
+		}
+		free(bname);
+	}
+	free(name);
+	return 0;
+}
+
+static int parse_device_table(filesystem *root, FILE * file)
+{
+	char *line;
+	int status = 0;
+	size_t length = 0;
+
+	/* Turn off squash, since we must ensure that values
+	 * entered via the device table are not squashed */
+	squash_uids = 0;
+	squash_perms = 0;
+
+	/* Looks ok so far.  The general plan now is to read in one
+	 * line at a time, check for leading comment delimiters ('#'),
+	 * then try and parse the line as a device table.  If we fail
+	 * to parse things, try and help the poor fool to fix their
+	 * device table with a useful error msg... */
+	line = NULL;
+	while (getline(&line, &length, file) != -1) {
+		/* First trim off any whitespace */
+		int len = strlen(line);
+
+		/* trim trailing whitespace */
+		while (len > 0 && isspace(line[len - 1]))
+			line[--len] = '\0';
+		/* trim leading whitespace */
+		memmove(line, &line[strspn(line, " \n\r\t\v")], len);
+
+		/* How long are we after trimming? */
+		len = strlen(line);
+
+		/* If this is NOT a comment line, try to interpret it */
+		if (len && *line != '#') {
+			if (interpret_table_entry(root, line))
+				status = 1;
+		}
+
+		free(line);
+		line = NULL;
+	}
+	fclose(file);
+
+	return status;
+}
+
+/*
+Local Variables:
+c-file-style: "linux"
+c-basic-offset: 4
+tab-width: 4
+End:
+*/
 
 void showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
-	"  -x image                Use this image as a starting point\n"
-	"  -d directory            Add this directory as source\n"
-	"  -f file                 Add nodes (e.g. devices) from this spec file\n"
-	"  -b blocks               Size in blocks\n"
-	"  -i inodes               Number of inodes\n"
-	"  -r reserved             Number of reserved blocks\n"
-	"  -g path                 Generate a block map file for this path\n"
-	"  -e value                Fill unallocated blocks with value\n"
-	"  -z                      Make files with holes\n"
-	"  -v                      Print resulting filesystem structure\n"
-	"  -h                      Show this help\n\n"
-	"Example of spec file:\n"
-	"drwx            /dev\n"
-	"crw-    10,190  /dev/lcd\n"
-	"brw-    1,0     /dev/ram0\n\n"
-	"Report bugs to xavier.bestel@free.fr\n", argv0);
+	"  -x image     Use this image as a starting point\n"
+	"  -d directory     Add this directory as source\n"
+	"  -b blocks        Size in blocks\n"
+	"  -i inodes        Number of inodes\n"
+	"  -r reserved      Number of reserved blocks\n"
+	"  -g path          Generate a block map file for this path\n"
+	"  -e value         Fill unallocated blocks with value\n"
+	"  -z               Make files with holes\n"
+	"  -D,-f            Use the named FILE as a device table file\n"
+	"  -q               Squash permissions and owners making all files be owned by root\n"
+	"  -U               Squash owners making all files be owned by root\n"
+	"  -P               Squash permissions on all files\n"
+	"  -v               Print resulting filesystem structure\n"
+	"  -h               Show this help\n\n"
+	"Report bugs to xavier.bestel@free.fr\n", app_name);
 }
 
 #define MAX_DOPT 128
@@ -1840,21 +2111,17 @@ int main(int argc, char **argv)
 	filesystem *fs;
 	int i;
 	int c;
+	struct stat sb;
+	FILE *devtable = NULL;
 
-	argv0 = argv[0];
-	if(argc <= 1)
-	{
-		showhelp();
-		exit(1);
-	}
-	while((c = getopt(argc, argv, "x:f:d:b:i:r:g:e:zvh")) != EOF)
+	app_name = argv[0];
+	while((c = getopt(argc, argv, "x:d:b:i:r:g:e:zvhD:f:qUP")) != EOF)
 		switch(c)
 		{
 			case 'x':
 				fsin = optarg;
 				break;
 			case 'd':
-			case 'f':
 				dopt[didx++] = optarg;
 				break;
 			case 'b':
@@ -1875,6 +2142,24 @@ int main(int argc, char **argv)
 			case 'z':
 				holes = 1;
 				break;
+			case 'f':
+			case 'D':
+				devtable = xfopen(optarg, "r");
+				if (fstat(fileno(devtable), &sb) < 0)
+					perror_msg_and_die(optarg);
+				if (sb.st_size < 10)
+					error_msg_and_die("%s: not a proper device table file", optarg);
+				break;
+			case 'q':
+				squash_uids = 1;
+				squash_perms = 1;
+				break;
+			case 'U':
+				squash_uids = 1;
+				break;
+			case 'P':
+				squash_perms = 1;
+				break;
 			case 'v':
 				verbose = 1;
 				break;
@@ -1885,16 +2170,14 @@ int main(int argc, char **argv)
 				exit(1);
 		}
 	if(optind < (argc - 1))
-		errexit("too many arguments");
+		error_msg_and_die("too many arguments");
 	if(optind == (argc - 1))
 		fsout = argv[optind];
 	if(fsin)
 	{
 		if(strcmp(fsin, "-"))
 		{
-			FILE * fh = fopen(fsin, "r");
-			if(!fh)
-				pexit(fsin);
+			FILE * fh = xfopen(fsin, "r");
 			fs = load_fs(fh, bigendian);
 			fclose(fh);
 		}
@@ -1904,7 +2187,7 @@ int main(int argc, char **argv)
 	else
 	{
 		if(nbblocks == -1)
-			errexit("filesystem size unspecified");
+			error_msg_and_die("filesystem size unspecified");
 		if(nbinodes == -1)
 			nbinodes = nbblocks * BLOCKSIZE / rndup(BYTES_PER_INODE, BLOCKSIZE);
 		if(nbresrvd == -1)
@@ -1919,30 +2202,26 @@ int main(int argc, char **argv)
 		stat(dopt[i], &st);
 		switch(st.st_mode & S_IFMT)
 		{
-			case S_IFREG:
-				if(!(fh = fopen(dopt[i], "r")))
-					pexit(dopt[i]);
-				add2fs_from_file(fs, EXT2_ROOT_INO, fh);
-				fclose(fh);
-				break;
 			case S_IFDIR:
 				if(!(pdir = getcwd(0, GETCWD_SIZE)))
-					pexit(dopt[i]);
+					perror_msg_and_die(dopt[i]);
 				if(chdir(dopt[i]) < 0)
-					pexit(dopt[i]);
+					perror_msg_and_die(dopt[i]);
 				add2fs_from_dir(fs, EXT2_ROOT_INO);
 				if(chdir(pdir) < 0)
-					pexit(pdir);
+					perror_msg_and_die(pdir);
 				free(pdir);
 				break;
 			default:
-				errexit("%s in neither a file nor a directory", dopt[i]);
+				error_msg_and_die("%s in neither a file nor a directory", dopt[i]);
 		}
 	}
 	if(emptyval)
 		for(i = 1; i < fs->sb.s_blocks_count; i++)
 			if(!allocated(GRP_GET_BLOCK_BITMAP(fs,i),GRP_BBM_OFFSET(fs,i)))
 				memset(get_blk(fs, i), emptyval, BLOCKSIZE);
+	if(devtable)
+		parse_device_table(fs, devtable);
 	if(verbose)
 		print_fs(fs);
 	for(i = 0; i < gidx; i++)
@@ -1952,21 +2231,18 @@ int main(int argc, char **argv)
 		char *p;
 		FILE *fh;
 		if(!(nod = find_path(fs, EXT2_ROOT_INO, gopt[i])))
-			errexit("path %s not found in filesystem", gopt[i]);
+			error_msg_and_die("path %s not found in filesystem", gopt[i]);
 		while((p = strchr(gopt[i], '/')))
 			*p = '_';
 		snprintf(fname, MAX_FILENAME-1, "%s.blk", gopt[i]);
-		if(!(fh = fopen(fname, "w")))
-			pexit(fname);
+		fh = xfopen(fname, "w");
 		fprintf(fh, "%d:", get_nod(fs, nod)->i_size);
 		flist_blocks(fs, nod, fh);
 		fclose(fh);
 	}
 	if(strcmp(fsout, "-"))
 	{
-		FILE * fh = fopen(fsout, "w");
-		if(!fh)
-			pexit(fsout);
+		FILE * fh = xfopen(fsout, "w");
 		dump_fs(fs, fh, bigendian);
 		fclose(fh);
 	}
