@@ -1367,6 +1367,9 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 				case 'p':
 					mode |= FM_IFIFO;
 					break;
+				case 's':
+					mode |= FM_IFSOCK;
+					break;
 				case 'c':
 					mode |= FM_IFCHR;
 					break;
@@ -1460,6 +1463,9 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					break;
 				case S_IFIFO:
 					mknod_fs(fs, this_nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
+					break;
+				case S_IFSOCK:
+					mknod_fs(fs, this_nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
 					b = xreadlink(dent->d_name);
