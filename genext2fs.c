@@ -76,6 +76,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <libgen.h>
 #include <stdarg.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -1247,30 +1248,6 @@ static uint32 get_mode(struct stat *st)
 	return mode;
 }
 
-// basename of a path - free me
-static char * basename(const char * fullpath)
-{
-	char * p = strrchr(fullpath, '/');
-	if(!p[1])
-	{
-		while(*p == '/' && p > fullpath)
-			*(p--) = 0;
-		p = strrchr(fullpath, '/');
-	}
-	return xstrdup(p ? p + 1 : fullpath);
-}
-
-// dirname of a path - free me
-static char * dirname(const char * fullpath)
-{
-	char * p, * n = xstrdup(fullpath);
-	if((p = strrchr(n, '/')))
-		*(p+1) = 0;
-	else
-		*n = 0;
-	return n;
-}
-
 // add or fixup entries to the filesystem from a text file
 /*  device table entries take the form of:
     <path>	<type> <mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
@@ -1295,7 +1272,7 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 	unsigned long mode, uid, gid, major, minor;
 	unsigned long start, increment, count;
 	uint32 nod, ctime, mtime;
-	char *c, type, *path, *dir, *name, *line = NULL;
+	char *c, type, *path = NULL, *path2 = NULL, *dir, *name, *line = NULL;
 	size_t len;
 	struct stat st;
 	int nbargs, lineno = 0;
@@ -1306,10 +1283,12 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 	while(getline(&line, &len, fh) >= 0)
 	{
 		mode = uid = gid = major = minor = 0;
-		start = 0; increment = 1; count = 0; path = NULL;
+		start = 0; increment = 1; count = 0;
 		lineno++;
 		if((c = strchr(line, '#')))
 			*c = 0;
+		free(path); path = NULL;
+		free(path2); path2 = NULL;
 		nbargs = sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
 					SCANF_STRING(path), &type, &mode, &uid, &gid, &major, &minor,
 					&start, &increment, &count);
@@ -1317,12 +1296,10 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 		{
 			if(nbargs > 0)
 				error_msg("device table line %d skipped: bad format for entry '%s'", lineno, path);
-			free(path);
 			continue;
 		}
 		if(stats)
 		{
-			free(path);
 			stats->ninodes += count ? count : 1;
 		}
 		else
@@ -1332,21 +1309,17 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 			if(squash_perms)
 				mode &= ~(FM_IRWXG | FM_IRWXO);
 			mode &= FM_IMASK;
+			path2 = strdup(path);
 			name = basename(path);
-			dir = dirname(path);
-			free(path);
+			dir = dirname(path2);
 			if(!(nod = find_path(fs, this_nod, dir)))
 			{
 				error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
-				free(name);
-				free(dir);
 				continue;
 			}
-			free(dir);
 			if((!strcmp(name, ".")) || (!strcmp(name, "..")))
 			{
 				error_msg("device table line %d skipped", lineno);
-				free(name);
 				continue;
 			}
 	
@@ -1369,7 +1342,6 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 					break;
 				default:
 					error_msg("device table line %d skipped: bad type '%c' for entry '%s'", lineno, type, name);
-					free(name);
 					continue;
 			}
 			if(count > 0)
@@ -1387,10 +1359,11 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 			}
 			else
 				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
-			free(name);
 		}
 	}
 	free(line);
+	free(path);
+	free(path2);
 }
 
 // adds a tree of entries to the filesystem from current dir
