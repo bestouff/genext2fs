@@ -138,6 +138,7 @@
 #define FM_IFCHR   0x2000	// character device
 #define FM_IFIFO   0x1000	// fifo
 
+#define FM_IMASK   0x0FFF
 #define FM_ISUID   0x0800	// SUID
 #define FM_ISGID   0x0400	// SGID
 #define FM_ISVTX   0x0200	// sticky bit
@@ -1087,8 +1088,7 @@ uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode
 	if((nod = find_dir(fs, parent_nod, name)))
 		return nod;
        	nod = alloc_nod(fs);
-	if (!(mode & FM_IFDIR))
-		mode |= FM_IFDIR;
+	mode |= FM_IFDIR;
 	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	add2dir(fs, nod, nod, ".", mode, uid, gid, ctime);
 	add2dir(fs, nod, parent_nod, "..", mode, uid, gid, ctime);
@@ -1542,7 +1542,7 @@ filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 // loads a filesystem from disk
 filesystem * load_fs(FILE * fh, int swapit)
 {
-	size_t fssize = 0;
+	size_t fssize;
 	filesystem *fs;
 	if((fseek(fh, 0, SEEK_END) < 0) || ((fssize = ftell(fh)) < 0))
 		perror_msg_and_die("input filesystem image");
@@ -1550,8 +1550,6 @@ filesystem * load_fs(FILE * fh, int swapit)
 	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
 	if(fssize < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
-	/*if(fssize > BLOCKS_PER_GROUP) // I build only one group
-		error_msg_and_die("too big filesystem"); */
 	if(!(fs = (filesystem*)calloc(fssize, BLOCKSIZE)))
 		error_msg_and_die("not enough memory for filesystem");
 	if(fread(fs, BLOCKSIZE, fssize, fh) != fssize)
@@ -1882,8 +1880,9 @@ void dump_fs(filesystem *fs, FILE * fh, int swapit)
 */
 static int interpret_table_entry(filesystem *fs, char *line)
 {
-	char type, *name = NULL, *tmp, *dir, *bname;
-	unsigned long mode = 0755, uid = 0, gid = 0, major = 0, minor = 0;
+// FIXME: this function is weird, it probably needs some love - Xav
+	char type, *name = NULL, *dir, *bname;
+	unsigned long mode = 0, uid = 0, gid = 0, major = 0, minor = 0;
 	unsigned long start = 0, increment = 1, count = 0;
 	inode *entry;
 	uint32 nod, parent;
@@ -1892,10 +1891,12 @@ static int interpret_table_entry(filesystem *fs, char *line)
 				SCANF_STRING(name), &type, &mode, &uid, &gid, &major, &minor,
 				&start, &increment, &count) < 0) 
 	{
+		free(name);
 		return 1;
 	}
+	mode &= FM_IMASK;
 
-	if (!strcmp(name, "/")) {
+	if (*name != '/') {
 		error_msg_and_die("Device table entries require absolute paths");
 	}
 
@@ -1936,19 +1937,16 @@ static int interpret_table_entry(filesystem *fs, char *line)
 		}
 	} else {
 		/* Try and find our parent now */
-		tmp = xstrdup(name);
-		dir = dirname(tmp);
+		dir = dirname(name);
 		parent = find_path(fs, EXT2_ROOT_INO, dir);
-		free(tmp);
+		free(dir);
 		if (!parent) {
 			error_msg ("skipping device_table entry '%s': no parent directory!", name);
 			free(name);
 			return 1;
 		}
 
-		tmp = xstrdup(name);
-		bname = xstrdup(basename(tmp));
-		free(tmp);
+		bname = basename(name);
 		switch (type) {
 			case 'd':
 				mkdir_fs(fs, parent, bname, mode|FM_IFDIR, uid, gid, time(NULL));
@@ -2058,14 +2056,6 @@ static int parse_device_table(filesystem *root, FILE * file)
 
 	return status;
 }
-
-/*
-Local Variables:
-c-file-style: "linux"
-c-basic-offset: 4
-tab-width: 4
-End:
-*/
 
 void showhelp(void)
 {
