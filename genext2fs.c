@@ -239,7 +239,8 @@ typedef unsigned int uint32;
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
 #define GETCWD_SIZE 4096
-inline int snprintf(char *str, size_t n, const char *fmt, ...)
+inline int
+snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
 	va_list ap;
@@ -253,7 +254,8 @@ inline int snprintf(char *str, size_t n, const char *fmt, ...)
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
 #define GETCWD_SIZE -1
-static inline int snprintf(char *str, size_t n, const char *fmt, ...)
+static inline int
+snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
 	va_list ap;
@@ -267,12 +269,14 @@ static inline int snprintf(char *str, size_t n, const char *fmt, ...)
 
 // endianness swap
 
-static inline uint16 swab16(uint16 val)
+static inline uint16
+swab16(uint16 val)
 {
 	return (val >> 8) | (val << 8);
 }
 
-static inline uint32 swab32(uint32 val)
+static inline uint32
+swab32(uint32 val)
 {
 	return ((val>>24) | ((val>>8)&0xFF00) |
 			((val<<8)&0xFF0000) | (val<<24));
@@ -462,35 +466,40 @@ struct hdlinks_s
 
 static struct hdlinks_s hdlinks;
 
-static void swap_sb(superblock *sb)
+static void
+swap_sb(superblock *sb)
 {
 #define this sb
 	superblock_decl
 #undef this
 }
 
-static void swap_gd(groupdescriptor *gd)
+static void
+swap_gd(groupdescriptor *gd)
 {
 #define this gd
 	groupdescriptor_decl
 #undef this
 }
 
-static void swap_nod(inode *nod)
+static void
+swap_nod(inode *nod)
 {
 #define this nod
 	inode_decl
 #undef this
 }
 
-static void swap_dir(directory *dir)
+static void
+swap_dir(directory *dir)
 {
 #define this dir
 	directory_decl
 #undef this
 }
 
-static void swap_block(block b)
+static void
+swap_block(block b)
 {
 	int i;
 	uint32 *blk = (uint32*)b;
@@ -510,13 +519,15 @@ static char * app_name;
 static const char *const memory_exhausted = "memory exhausted";
 
 // error (un)handling
-static void verror_msg(const char *s, va_list p)
+static void
+verror_msg(const char *s, va_list p)
 {
 	fflush(stdout);
 	fprintf(stderr, "%s: ", app_name);
 	vfprintf(stderr, s, p);
 }
-static void error_msg(const char *s, ...)
+static void
+error_msg(const char *s, ...)
 {
 	va_list p;
 	va_start(p, s);
@@ -525,7 +536,8 @@ static void error_msg(const char *s, ...)
 	putc('\n', stderr);
 }
 
-static void error_msg_and_die(const char *s, ...)
+static void
+error_msg_and_die(const char *s, ...)
 {
 	va_list p;
 	va_start(p, s);
@@ -535,7 +547,8 @@ static void error_msg_and_die(const char *s, ...)
 	exit(EXIT_FAILURE);
 }
 
-static void vperror_msg(const char *s, va_list p)
+static void
+vperror_msg(const char *s, va_list p)
 {
 	int err = errno;
 	if (s == 0)
@@ -546,7 +559,8 @@ static void vperror_msg(const char *s, va_list p)
 	fprintf(stderr, "%s%s\n", s, strerror(err));
 }
 #if 0
-static void perror_msg(const char *s, ...)
+static void
+perror_msg(const char *s, ...)
 {
 	va_list p;
 	va_start(p, s);
@@ -554,7 +568,8 @@ static void perror_msg(const char *s, ...)
 	va_end(p);
 }
 #endif
-static void perror_msg_and_die(const char *s, ...)
+static void
+perror_msg_and_die(const char *s, ...)
 {
 	va_list p;
 	va_start(p, s);
@@ -563,7 +578,8 @@ static void perror_msg_and_die(const char *s, ...)
 	exit(EXIT_FAILURE);
 }
 
-static FILE *xfopen(const char *path, const char *mode)
+static FILE *
+xfopen(const char *path, const char *mode)
 {
 	FILE *fp;
 	if ((fp = fopen(path, mode)) == NULL)
@@ -571,7 +587,8 @@ static FILE *xfopen(const char *path, const char *mode)
 	return fp;
 }
 
-static char *xstrdup(const char *s)
+static char *
+xstrdup(const char *s)
 {
 	char *t;
 
@@ -583,7 +600,8 @@ static char *xstrdup(const char *s)
 	return t;
 }
 
-static void *xrealloc(void *ptr, size_t size)
+static void *
+xrealloc(void *ptr, size_t size)
 {
 	ptr = realloc(ptr, size);
 	if (ptr == NULL && size != 0)
@@ -591,7 +609,8 @@ static void *xrealloc(void *ptr, size_t size)
 	return ptr;
 }
 
-static char *xreadlink(const char *path)
+static char *
+xreadlink(const char *path)
 {
 	static const int GROWBY = 80; /* how large we will grow strings by */
 
@@ -611,7 +630,8 @@ static char *xreadlink(const char *path)
 	return buf;
 }
 
-int	is_hardlink(ino_t inode)
+int
+is_hardlink(ino_t inode)
 {
 	int i;
 
@@ -627,36 +647,42 @@ int	is_hardlink(ino_t inode)
 #define plural(a) (a), ((a) > 1) ? "s" : ""
 
 // temporary working block
-static inline uint8 * get_workblk(void)
+static inline uint8 *
+get_workblk(void)
 {
 	unsigned char* b=calloc(1,BLOCKSIZE);
 	return b;
 }
-static inline void free_workblk(block b)
+static inline void
+free_workblk(block b)
 {
 	free(b);
 }
 
 /* Rounds qty upto a multiple of siz. siz should be a power of 2 */
-static uint32 rndup(uint32 qty, uint32 siz)
+static uint32
+rndup(uint32 qty, uint32 siz)
 {
 	return (qty + (siz - 1)) & ~(siz - 1);
 }
 
 // check if something is allocated in the bitmap
-static inline uint32 allocated(block b, uint32 item)
+static inline uint32
+allocated(block b, uint32 item)
 {
 	return b[(item-1) / 8] & (1 << ((item-1) % 8));
 }
 
 // return a given block from a filesystem
-static inline uint8 * get_blk(filesystem *fs, uint32 blk)
+static inline uint8 *
+get_blk(filesystem *fs, uint32 blk)
 {
 	return (uint8*)fs + blk*BLOCKSIZE;
 }
 
 // return a given inode from a filesystem
-static inline inode * get_nod(filesystem *fs, uint32 nod)
+static inline inode *
+get_nod(filesystem *fs, uint32 nod)
 {
 	int grp,offset;
 	inode *itab;
@@ -669,7 +695,8 @@ static inline inode * get_nod(filesystem *fs, uint32 nod)
 
 // allocate a given block/inode in the bitmap
 // allocate first free if item == 0
-static uint32 allocate(block b, uint32 item)
+static uint32
+allocate(block b, uint32 item)
 {
 	if(!item)
 	{
@@ -693,13 +720,15 @@ static uint32 allocate(block b, uint32 item)
 }
 
 // deallocate a given block/inode
-static void deallocate(block b, uint32 item)
+static void
+deallocate(block b, uint32 item)
 {
 	b[(item-1) / 8] &= ~(1 << ((item-1) % 8));
 }
 
 // allocate a block
-static uint32 alloc_blk(filesystem *fs, uint32 nod)
+static uint32
+alloc_blk(filesystem *fs, uint32 nod)
 {
 	uint32 bk=0;
 	uint32 grp,nbgroups;
@@ -722,7 +751,8 @@ static uint32 alloc_blk(filesystem *fs, uint32 nod)
 }
 
 // free a block
-static void free_blk(filesystem *fs, uint32 bk)
+static void
+free_blk(filesystem *fs, uint32 bk)
 {
 	uint32 grp;
 
@@ -734,7 +764,8 @@ static void free_blk(filesystem *fs, uint32 bk)
 }
 
 // allocate an inode
-static uint32 alloc_nod(filesystem *fs)
+static uint32
+alloc_nod(filesystem *fs)
 {
 	uint32 nod=0,best_group=0;
 	uint32 grp,nbgroups,avefreei;
@@ -765,7 +796,8 @@ static uint32 alloc_nod(filesystem *fs)
 }
 
 // print a bitmap allocation
-static void print_bm(block b, uint32 max)
+static void
+print_bm(block b, uint32 max)
 {
 	uint32 i;
 	printf("----+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8----+----9----+----0\n");
@@ -780,7 +812,8 @@ static void print_bm(block b, uint32 max)
 }
 
 // initalize a blockwalker (iterator for blocks list)
-static void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
+static void
+init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
 {
 	bw->bnum = 0;
 	bw->bpdir = EXT2_INIT_BLOCK;
@@ -794,7 +827,8 @@ static void init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
 //				  the file. moreover, i_blocks isn't updated.
 //				  in fact, don't do that, just use extend_blk
 // if hole!=0, create a hole in the file
-static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
+static uint32
+walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 {
 	uint32 *bkref = 0;
 	uint32 *b;
@@ -1025,7 +1059,8 @@ static uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create
 }
 
 // add blocks to an inode (file/dir/etc...)
-static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
+static void
+extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 {
 	int create = amount;
 	blockwalker bw, lbw;
@@ -1065,7 +1100,8 @@ static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 }
 
 // link an entry (inode #) to a directory
-static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
+static void
+add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1135,7 +1171,8 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 }
 
 // find an entry in a directory
-static uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
+static uint32
+find_dir(filesystem *fs, uint32 nod, const char * name)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1154,7 +1191,8 @@ static uint32 find_dir(filesystem *fs, uint32 nod, const char * name)
 }
 
 // find the inode of a full path
-static uint32 find_path(filesystem *fs, uint32 nod, const char * name)
+static uint32
+find_path(filesystem *fs, uint32 nod, const char * name)
 {
 	char *p, *n, *n2 = xstrdup(name);
 	n = n2;
@@ -1179,7 +1217,8 @@ static uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 }
 
 // create a simple inode
-static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
+static uint32
+mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
 {
 	uint32 nod;
 	inode *node;
@@ -1222,14 +1261,16 @@ static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint
 }
 
 // make a full-fledged directory (i.e. with "." & "..")
-static inline uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
+static inline uint32
+mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
 	uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	return mknod_fs(fs, parent_nod, name, mode|FM_IFDIR, uid, gid, 0, 0, ctime, mtime);
 }
 
 // make a symlink
-static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 *b, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+static uint32
+mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 *b, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO, uid, gid, 0, 0, ctime, mtime);
 	extend_blk(fs, nod, 0, - (int)get_nod(fs, nod)->i_blocks / INOBLK);
@@ -1244,7 +1285,8 @@ static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, siz
 }
 
 // make a file from a FILE*
-static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+static uint32
+mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint8 * b;
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
@@ -1265,7 +1307,8 @@ static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uin
 }
 
 // retrieves a mode info from a struct stat
-static uint32 get_mode(struct stat *st)
+static uint32
+get_mode(struct stat *st)
 {
 	uint32 mode = 0;
 
@@ -1315,7 +1358,8 @@ static uint32 get_mode(struct stat *st)
     block, fifo, or directory does not exist, it will be created.
 */
 
-static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+static void
+add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
 	unsigned long mode, uid, gid, major, minor;
 	unsigned long start, increment, count;
@@ -1423,7 +1467,8 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 }
 
 // adds a tree of entries to the filesystem from current dir
-static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+static void
+add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
 	uint32 nod;
 	uint32 uid, gid, mode, ctime, mtime;
@@ -1539,7 +1584,8 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 }
 
 // endianness swap of x-indirect blocks
-static void swap_goodblocks(filesystem *fs, inode *nod)
+static void
+swap_goodblocks(filesystem *fs, inode *nod)
 {
 	int i,j,done=0;
 	uint32 *b,*b2;
@@ -1594,7 +1640,8 @@ static void swap_goodblocks(filesystem *fs, inode *nod)
 	return;
 }
 
-static void swap_badblocks(filesystem *fs, inode *nod)
+static void
+swap_badblocks(filesystem *fs, inode *nod)
 {
 	int i,j,done=0;
 	uint32 *b,*b2;
@@ -1638,7 +1685,8 @@ static void swap_badblocks(filesystem *fs, inode *nod)
 }
 
 // endianness swap of the whole filesystem
-static void swap_goodfs(filesystem *fs)
+static void
+swap_goodfs(filesystem *fs)
 {
 	int i;
 	for(i = 1; i < fs->sb.s_inodes_count; i++)
@@ -1666,7 +1714,8 @@ static void swap_goodfs(filesystem *fs)
 	swap_sb(&fs->sb);
 }
 
-static void swap_badfs(filesystem *fs)
+static void
+swap_badfs(filesystem *fs)
 {
 	int i;
 	swap_sb(&fs->sb);
@@ -1695,7 +1744,8 @@ static void swap_badfs(filesystem *fs)
 }
 
 // initialize an empty filesystem
-static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp)
+static filesystem *
+init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp)
 {
 	int i;
 	filesystem *fs;
@@ -1858,7 +1908,8 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 }
 
 // loads a filesystem from disk
-static filesystem * load_fs(FILE * fh, int swapit)
+static filesystem *
+load_fs(FILE * fh, int swapit)
 {
 	size_t fssize;
 	filesystem *fs;
@@ -1879,13 +1930,15 @@ static filesystem * load_fs(FILE * fh, int swapit)
 	return fs;
 }
 
-static void free_fs(filesystem *fs)
+static void
+free_fs(filesystem *fs)
 {
 	free(fs);
 }
 
 // just walk through blocks list
-static void flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
+static void
+flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1896,7 +1949,8 @@ static void flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
 }
 
 // walk through blocks list
-static void list_blocks(filesystem *fs, uint32 nod)
+static void
+list_blocks(filesystem *fs, uint32 nod)
 {
 	int bn = 0;
 	blockwalker bw;
@@ -1909,7 +1963,8 @@ static void list_blocks(filesystem *fs, uint32 nod)
 }
 
 // saves blocks to FILE*
-static void write_blocks(filesystem *fs, uint32 nod, FILE* f)
+static void
+write_blocks(filesystem *fs, uint32 nod, FILE* f)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1926,7 +1981,8 @@ static void write_blocks(filesystem *fs, uint32 nod, FILE* f)
 }
 
 // hexdumps blocks to a FILE*
-static void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
+static void
+hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1961,7 +2017,8 @@ static void hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 }
 
 // print block/char device minor and major
-static void print_dev(filesystem *fs, uint32 nod)
+static void
+print_dev(filesystem *fs, uint32 nod)
 {
 	int minor, major;
 	minor = ((uint8*)get_nod(fs, nod)->i_block)[0];
@@ -1970,7 +2027,8 @@ static void print_dev(filesystem *fs, uint32 nod)
 }
 
 // print an inode as a directory
-static void print_dir(filesystem *fs, uint32 nod)
+static void
+print_dir(filesystem *fs, uint32 nod)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1994,7 +2052,8 @@ static void print_dir(filesystem *fs, uint32 nod)
 }
 
 // print a symbolic link
-static void print_link(filesystem *fs, uint32 nod)
+static void
+print_link(filesystem *fs, uint32 nod)
 {
 	if(!get_nod(fs, nod)->i_blocks)
 		printf("links to '%s'\n", (char*)get_nod(fs, nod)->i_block);
@@ -2007,7 +2066,8 @@ static void print_link(filesystem *fs, uint32 nod)
 }
 
 // make a ls-like printout of permissions
-static void make_perms(uint32 mode, char perms[11])
+static void
+make_perms(uint32 mode, char perms[11])
 {
 	strcpy(perms, "----------");
 	if(mode & FM_IRUSR)
@@ -2066,7 +2126,8 @@ static void make_perms(uint32 mode, char perms[11])
 }
 
 // print an inode
-static void print_inode(filesystem *fs, uint32 nod)
+static void
+print_inode(filesystem *fs, uint32 nod)
 {
 	char *s;
 	char perms[11];
@@ -2132,7 +2193,8 @@ static void print_inode(filesystem *fs, uint32 nod)
 }
 
 // describes various fields in a filesystem
-static void print_fs(filesystem *fs)
+static void
+print_fs(filesystem *fs)
 {
 	int i;
 	uint8 *ibm;
@@ -2167,7 +2229,8 @@ static void print_fs(filesystem *fs)
 	}
 }
 
-static void dump_fs(filesystem *fs, FILE * fh, int swapit)
+static void
+dump_fs(filesystem *fs, FILE * fh, int swapit)
 {
 	int nbblocks = fs->sb.s_blocks_count;
 	fs->sb.s_reserved[200] = 0;
@@ -2179,7 +2242,8 @@ static void dump_fs(filesystem *fs, FILE * fh, int swapit)
 		swap_badfs(fs);
 }
 
-static void showhelp(void)
+static void
+showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
@@ -2209,7 +2273,8 @@ static void showhelp(void)
 extern char* optarg;
 extern int optind, opterr, optopt;
 
-int main(int argc, char **argv)
+int
+main(int argc, char **argv)
 {
 	int nbblocks = -1;
 	int nbinodes = -1;
