@@ -139,39 +139,38 @@ struct stats {
 
 #define WALK_END           0xFFFFFFFE
 
-
 // file modes
 
-#define FM_IFMT    0xF000	// format mask
-#define FM_IFLNK   0xA000	// symbolic link
-#define FM_IFSOCK  0xC000	// socket
-#define FM_IFREG   0x8000	// regular file
-#define FM_IFBLK   0x6000	// block device
-#define FM_IFDIR   0x4000	// directory
-#define FM_IFCHR   0x2000	// character device
-#define FM_IFIFO   0x1000	// fifo
+#define FM_IFMT    0170000	// format mask
+#define FM_IFSOCK  0140000	// socket
+#define FM_IFLNK   0120000	// symbolic link
+#define FM_IFREG   0100000	// regular file
 
-#define FM_IMASK   0x0FFF	// all perms
-#define FM_ISUID   0x0800	// SUID
-#define FM_ISGID   0x0400	// SGID
-#define FM_ISVTX   0x0200	// sticky bit
+#define FM_IFBLK   0060000	// block device
+#define FM_IFDIR   0040000	// directory
+#define FM_IFCHR   0020000	// character device
+#define FM_IFIFO   0010000	// fifo
 
+#define FM_IMASK   0007777	// *all* perms mask for everything below
 
-#define FM_IRWXU   0x01C0	// user mask
-#define FM_IRUSR   0x0100	// read
-#define FM_IWUSR   0x0080	// write
-#define FM_IXUSR   0x0040	// execute
+#define FM_ISUID   0004000	// SUID
+#define FM_ISGID   0002000	// SGID
+#define FM_ISVTX   0001000	// sticky bit
 
-#define FM_IRWXG   0x0038	// group mask
-#define FM_IRGRP   0x0020	// read
-#define FM_IWGRP   0x0010	// write
-#define FM_IXGRP   0x0008	// execute
+#define FM_IRWXU   0000700	// entire "user" mask
+#define FM_IRUSR   0000400	// read
+#define FM_IWUSR   0000200	// write
+#define FM_IXUSR   0000100	// execute
 
-#define FM_IRWXO   0x0007	// other mask
-#define FM_IROTH   0x0004	// read
-#define FM_IWOTH   0x0002	// write
-#define FM_IXOTH   0x0001	// execute
+#define FM_IRWXG   0000070	// entire "group" mask
+#define FM_IRGRP   0000040	// read
+#define FM_IWGRP   0000020	// write
+#define FM_IXGRP   0000010	// execute
 
+#define FM_IRWXO   0000007	// entire "other" mask
+#define FM_IROTH   0000004	// read
+#define FM_IWOTH   0000002	// write
+#define FM_IXOTH   0000001	// execute
 
 // options
 
