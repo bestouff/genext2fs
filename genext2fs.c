@@ -1176,13 +1176,16 @@ uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode
 	uid_t uid, gid_t gid, time_t ctime)
 {
 	uint32 nod;
+        inode *parent_node;
 	if((nod = find_dir(fs, parent_nod, name)))
 		return nod;
-       	nod = alloc_nod(fs);
+	nod = alloc_nod(fs);
+	parent_node = get_nod(fs, parent_nod);
 	mode |= FM_IFDIR;
 	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	add2dir(fs, nod, nod, ".", mode, uid, gid, ctime);
-	add2dir(fs, nod, parent_nod, "..", mode, uid, gid, ctime);
+	add2dir(fs, nod, parent_nod, "..", parent_node->i_mode,
+	        parent_node->i_uid, parent_node->i_gid, parent_node->i_ctime);
 	fs->gd[GRP_GROUP_OF_INODE(fs,nod)].bg_used_dirs_count++;
 	return nod;
 }
