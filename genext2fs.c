@@ -1371,7 +1371,7 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 				for(i = start; i < count; i++)
 				{
 					snprintf(dname, len, "%s%u", name, i);
-					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor, ctime, mtime);
+					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor + (i * increment - start), ctime, mtime);
 				}
 				free(dname);
 			}
