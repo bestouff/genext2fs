@@ -42,7 +42,7 @@ install: build
 	dh_installdirs
 
 	# Add here commands to install the package into debian/genext2fs.
-	$(MAKE) install DESTDIR=`pwd`/debian/tmp
+	$(MAKE) install DESTDIR=`pwd`/debian/genext2fs
 
 
 # Build architecture-independent files here.
