@@ -21,7 +21,7 @@ fail () {
 }
 
 pass () {
-	md5=`md5sum ext2.img | cut -d" " -f1`
+	md5=`calc_digest`
 	echo PASSED
 	echo $@ $md5
 	test_cleanup

@@ -17,7 +17,7 @@ set -e
 # Usage: md5cmp expected-digest
 md5cmp () {
 	checksum=$1
-	md5=`md5sum ext2.img | cut -d" " -f1`
+	md5=`calc_digest`
 	if [ $md5 == $checksum ] ; then
 		echo PASSED
 	else

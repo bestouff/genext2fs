@@ -231,7 +231,7 @@ typedef unsigned int uint32;
 // glibc ...
 
 #ifdef __GNUC__
-#ifndef __sparc__
+#if !defined(__sparc__) && !defined(__APPLE__)
 #define SCANF_PREFIX "a"
 #define SCANF_STRING(s) (&s)
 #define GETCWD_SIZE 0
@@ -239,6 +239,7 @@ typedef unsigned int uint32;
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
 #define GETCWD_SIZE 4096
+#ifndef __APPLE__
 inline int
 snprintf(char *str, size_t n, const char *fmt, ...)
 {
@@ -249,6 +250,7 @@ snprintf(char *str, size_t n, const char *fmt, ...)
 	va_end(ap);
 	return ret;
 }
+#endif // ndef __APPLE__
 #endif
 #else
 #define SCANF_PREFIX "511"
@@ -266,6 +268,46 @@ snprintf(char *str, size_t n, const char *fmt, ...)
 }
 #endif
 
+#if defined(__APPLE__) && defined(__GNUC__)
+// getline() replacement for Darwin, might work on other systems
+// written according to the getline man page included with Debian Linux
+ssize_t getline(char **lineptr, size_t *n, FILE *stream)
+{
+	char *buf = *lineptr;	// could be NULL, in which case we allocate
+	size_t bufsize = *n;	// current buffer size, adjust if we (re)alloc
+	
+	char *temp = NULL;
+	size_t tempsize = 0;
+	
+	// temp is not a C string and we don't own the buffer it points into
+	// must copy into a malloced buffer and NULL terminate
+	temp = fgetln(stream, &tempsize);
+	if(!temp) return -1;
+	
+	tempsize++; // adjust for NULL terminator
+	if(buf) {
+		// check if we have to reallocate
+		if(bufsize < tempsize) {
+			bufsize = tempsize;
+			buf = (char*)realloc(buf, tempsize);
+			if(!buf) return -1;
+		}
+	} else {
+		bufsize = tempsize;
+		buf = (char*)malloc(bufsize);
+		if(!buf) return -1;
+	}
+	
+	memcpy(buf, temp, tempsize-1);
+	buf[tempsize-1] = '\0';
+	
+	// give new pointer and size back, nondestructive if we didn't change anything..
+	*n = bufsize;
+	*lineptr = buf;
+	
+	return (ssize_t)(tempsize-1);	// don't include the NULL terminator, per getline man page
+}
+#endif
 
 // endianness swap
 

@@ -40,3 +40,15 @@ gen_cleanup () {
 	rm -rf ext2.img test
 }
 
+# calc_digest - Return the MD5 digest of the test image
+# Usage: calc_digest
+calc_digest () {
+	digest=`md5sum ext2.img 2>/dev/null | cut -f 1 -d " "`
+	if [ x$digest != x ] ; then
+ 		echo $digest
+	else
+		digest=`md5 ext2.img 2>/dev/null | cut -f 4 -d " "`
+		echo $digest
+	fi
+}
+
