@@ -666,11 +666,12 @@ static char *xreadlink(const char *path)
 // temporary working block
 inline uint8 * get_workblk(void)
 {
-	static block b;
+	unsigned char* b=calloc(1,BLOCKSIZE);
 	return b;
 }
 inline void free_workblk(block b)
 {
+	free(b);
 }
 
 /* Rounds qty upto a multiple of siz. siz should be a power of 2 */
