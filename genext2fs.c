@@ -182,7 +182,7 @@ static int count_ino_in_hashtable(void)
 #define BYTES_PER_INODE   (8*BLOCKSIZE)
 /* Percentage of blocks that are reserved.*/
 #define RESERVED_INODES       5/100
-#define MAX_RESERVED_INODES  25/100
+#define MAX_RESERVED_BLOCKS  25/100
 
 
 // inode block size (why is it != BLOCKSIZE ?!?)
