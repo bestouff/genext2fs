@@ -56,9 +56,10 @@
 // the image file to copy files on it. It doesn't even require
 // you to be the superuser to make device nodes.
 //
-// Example usage:
+// Example usage (using both short and long options):
 //
 // # genext2fs -b 1440 -d srcdir /dev/fd0
+// # genext2fs --size-in-blocks=1440 --source-directory=srcdir /dev/fd0
 //
 // All files in the srcdir directory will be written to /dev/fd0 as
 // a new ext2 filesystem image. You can then mount the floppy as
