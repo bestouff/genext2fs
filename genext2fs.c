@@ -28,6 +28,9 @@
 // 	28 Jun 2001	Bugfix: getcwd differs for Solaris/GNU	mike@sowbug.com
 // 	 8 Mar 2002	Bugfix: endianness swap of x-indirects
 // 	23 Mar 2002	Bugfix: test for IFCHR or IFBLK was flawed
+// 	10 Oct 2002	Added comments,makefile targets,	vsundar@ixiacom.com    
+// 			endianess swap assert check.  
+// 			Copyright (C) 2002 Ixia communications
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
@@ -69,6 +72,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <assert.h>
 
 
 
@@ -78,10 +82,14 @@
 #define BLOCKSIZE         1024
 #define BLOCKS_PER_GROUP  8192
 #define BYTES_PER_INODE   (8*BLOCKSIZE)
+/* Percentage of blocks that are reserved.*/
 #define RESERVED_INODES   5/100
 
 
 // inode block size (why is it != BLOCKSIZE ?!?)
+/* The field i_blocks in the ext2 inode stores the number of data blocks
+   but in terms of 512 bytes. That is what INODE_BLOCKSIZE represents.
+   INOBLK is the number of such blocks in an actual disk block            */
 
 #define INODE_BLOCKSIZE   512
 #define INOBLK            (BLOCKSIZE / INODE_BLOCKSIZE)
@@ -306,6 +314,32 @@ typedef struct
 
 typedef uint8 block[BLOCKSIZE];
 
+/* blockwalker fields:
+   The blockwalker is used to access all the blocks of a file (including
+   the indirection blocks) through repeated calls to walk_bw.  
+   
+   bpdir -> index into the inode->i_block[]. Indicates level of indirection.
+   bnum -> total number of blocks so far accessed. including indirection
+           blocks.
+   bpind,bpdind,bptind -> index into indirection blocks.
+   
+   bpind, bpdind, bptind do *NOT* index into single, double and triple
+   indirect blocks resp. as you might expect from their names. Instead 
+   they are in order the 1st, 2nd & 3rd index to be used
+   
+   As an example..
+   To access data block number 70000:
+        bpdir: 15 (we are doing triple indirection)
+        bpind: 0 ( index into the triple indirection block)
+        bpdind: 16 ( index into the double indirection block)
+        bptind: 99 ( index into the single indirection block)
+	70000 = 12 + 256 + 256*256 + 16*256 + 100 (indexing starts from zero)
+
+   So,for double indirection bpind will index into the double indirection 
+   block and bpdind into the single indirection block. For single indirection
+   only bpind will be used.
+*/
+   
 typedef struct
 {
 	uint32 bnum;
@@ -425,7 +459,7 @@ inline void free_workblk(block b)
 {
 }
 
-// rounds a quantity up to a blocksize
+/* Rounds qty upto a multiple of siz. siz should be a power of 2 */
 uint32 rndup(uint32 qty, uint32 siz)
 {
 	return (qty + (siz - 1)) & ~(siz - 1);
@@ -993,8 +1027,20 @@ void swap_goodblocks(filesystem *fs, inode *nod)
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
 		return;
+	/* Currently this will fail b'cos the number of blocks as stored
+	   in i_blocks also includes the indirection blocks (see
+	   walk_bw). But this function assumes that i_blocks only
+	   stores the count of data blocks ( Actually according to
+	   "Understanding the Linux Kernel" (Table 17-3 p502 1st Ed)
+	   i_blocks IS supposed to store the count of data blocks). so
+	   with a file of size 268K nblk would be 269.The above check
+	   will be false even though double indirection hasn't been
+	   started.This is benign as 0 means block 0 which has been
+	   zeroed out and therefore points back to itself from any offset
+	 */
+	assert(nod->i_block[EXT2_DIND_BLOCK] != 0);
 	for(i = 0; i < BLOCKSIZE/4; i++)
-		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + i)
+		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + (BLOCKSIZE/4)*i )
 			swap_block(get_blk(fs, ((uint32*)get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]))[i]));
 	swap_block(get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
@@ -1014,9 +1060,11 @@ void swap_badblocks(filesystem *fs, inode *nod)
 	swap_block(get_blk(fs, nod->i_block[EXT2_IND_BLOCK]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4)
 		return;
+	/* See comment in swap_goodblocks */
+	assert(nod->i_block[EXT2_DIND_BLOCK] != 0);
 	swap_block(get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]));
 	for(i = 0; i < BLOCKSIZE/4; i++)
-		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + i)
+		if(nblk > EXT2_IND_BLOCK + BLOCKSIZE/4 + (BLOCKSIZE/4)*i )
 			swap_block(get_blk(fs, ((uint32*)get_blk(fs, nod->i_block[EXT2_DIND_BLOCK]))[i]));
 	if(nblk <= EXT2_IND_BLOCK + BLOCKSIZE/4 + BLOCKSIZE/4 * BLOCKSIZE/4)
 		return;
