@@ -181,7 +181,8 @@ static int count_ino_in_hashtable(void)
 #define BLOCKS_PER_GROUP  8192
 #define BYTES_PER_INODE   (8*BLOCKSIZE)
 /* Percentage of blocks that are reserved.*/
-#define RESERVED_INODES   5/100
+#define RESERVED_INODES       5/100
+#define MAX_RESERVED_INODES  25/100
 
 
 // inode block size (why is it != BLOCKSIZE ?!?)
@@ -1739,7 +1740,7 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	fs->gd[0].bg_free_inodes_count--;
 	fs->gd[0].bg_used_dirs_count = 1;
 	itab0 = (inode *)get_blk(fs,fs->gd[0].bg_inode_table);
-	itab0[EXT2_ROOT_INO-1].i_mode = FM_IFDIR | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
+	itab0[EXT2_ROOT_INO-1].i_mode = FM_IFDIR | FM_IRWXU | FM_IRGRP | FM_IROTH | FM_IXGRP | FM_IXOTH; 
 	itab0[EXT2_ROOT_INO-1].i_size = BLOCKSIZE;
 	itab0[EXT2_ROOT_INO-1].i_links_count = 2;
 
@@ -1765,8 +1766,8 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 		/* We run into problems with e2fsck if directory lost+found grows
 		 * bigger than this. Need to find out why this happens - sundar
 		 */
-		if (fs->sb.s_r_blocks_count > 2049 ) 
-			fs->sb.s_r_blocks_count=2049;
+		if (fs->sb.s_r_blocks_count > fs->sb.s_blocks_count * MAX_RESERVED_BLOCKS ) 
+			fs->sb.s_r_blocks_count = fs->sb.s_blocks_count * MAX_RESERVED_BLOCKS;
 		for(i = 1; i < fs->sb.s_r_blocks_count; i++)
 			extend_blk(fs, nod, b, 1);
 		get_nod(fs, nod)->i_size = fs->sb.s_r_blocks_count * BLOCKSIZE;
