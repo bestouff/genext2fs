@@ -1,73 +1,65 @@
 #!/bin/sh
+
+# Use this script if you need to regenerate the digest values
+# in test.sh, or if you don't care about digests and you just
+# want to see some fsck results. Should be run as root.
+
 set -e
 
-cleanup () {
+. test-gen.lib
+
+test_cleanup () {
 	umount mnt 2>/dev/null || true
-	rm -rf mnt ext2.img lsout fout test 2>/dev/null
+	rm -rf mnt fout lsout
 }
 
-# dtest - Uses the -d directory option of genext2fs
-# Creates an image with a file of given size and verifies it
-# Usage: dtest file-size number-of-blocks 
-dtest () {
-	size=$1; blocks=$2;fname=$size 
-	echo "Testing with file of size $size "
-	mkdir -p test
-	cd test
-	if [ x$size == x0 ]; then
-		> file.$1
-	else
-		dd if=/dev/zero of=file.$1 bs=$size count=1 2>/dev/null
-	fi
-	cd ..
-	./genext2fs -b $blocks -d test ext2.img 
-	if ! /sbin/e2fsck -fn ext2.img ; then
-		echo "fsck failed"
-		echo FAILED
-		cleanup
-		exit 1
-	fi
-	mkdir -p mnt
-	if ! mount -t ext2 -o loop ext2.img mnt; then
-		echo FAILED
-		cleanup
-		exit 1
-	fi
-	if (! [ -f mnt/file.$fname ]) || \
-			[ $fname != "`ls -al mnt | grep file.$fname |awk '{print $5}'`" ] ; then
-		echo FAILED
-		cleanup
-		exit 1
-	fi
+fail () {
+	echo FAILED
+	test_cleanup
+	gen_cleanup
+	exit 1
+}
+
+pass () {
+	md5=`md5sum ext2.img | cut -d" " -f1`
 	echo PASSED
-	cleanup
+	echo $@ $md5
+	test_cleanup
+	gen_cleanup
 }
 
-# ftest - Uses the -f spec-file option of genext2fs
-# Creates an image with the devices mentioned in the given spec 
-# file and verifies it
-# Usage: ftest spec-file number-of-blocks 
-ftest () {
-	fname=$1; blocks=$2; 
-	echo "Testing with devices file $fname"
-	./genext2fs -b $blocks -f $fname ext2.img
-	if ! /sbin/e2fsck -fn ext2.img ; then
-		echo "fsck failed"
-		echo FAILED
-		cleanup
-		exit 1
-	fi
+# dtest-mount - Exercise the -d directory option of genext2fs
+# Creates an image with a file of given size, verifies it
+# and returns the command line with which to invoke dtest()
+# Usage: dtest-mount file-size number-of-blocks 
+dtest_mount () {
+	size=$1; blocks=$2
+	echo Testing with file of size $size
+	dgen $size $blocks
+	/sbin/e2fsck -fn ext2.img || fail
 	mkdir -p mnt
-	if ! mount -t ext2 -o loop ext2.img mnt; then
-		echo FAILED
-		cleanup
-		exit 1
+	mount -t ext2 -o ro,loop ext2.img mnt || fail
+	if (! [ -f mnt/file.$size ]) || \
+	      [ $size != "`ls -al mnt | grep file.$size |
+	                                awk '{print $5}'`" ] ; then
+		fail
 	fi
-	if ! [ -d mnt/dev ] ; then
-		echo FAILED
-		cleanup
-		exit 1
-	fi
+	pass dtest $size $blocks
+}
+
+# ftest-mount - Exercise the -f spec-file option of genext2fs
+# Creates an image with the devices mentioned in the given spec 
+# file, verifies it, and returns the command line with which to
+# invoke ftest()
+# Usage: ftest-mount spec-file number-of-blocks 
+ftest_mount () {
+	fname=$1; blocks=$2 
+	echo Testing with devices file $fname
+	fgen $fname $blocks
+	/sbin/e2fsck -fn ext2.img || fail
+	mkdir -p mnt
+	mount -t ext2 -o ro,loop ext2.img mnt || fail
+	[ -d mnt/dev ] || fail
 	# Exclude those devices that have interpolated
 	# minor numbers, as being too hard to match.
 	egrep -v "(hda|hdb|tty|loop|ram|ubda)" $fname | \
@@ -79,24 +71,17 @@ ftest () {
 		grep ^[bc] | \
 		awk '{ print "/dev/"$10,$3,$4,$5$6}' | \
 		sort -d -k3.6 > lsout
-	if ! diff fout lsout ; then
-		echo FAILED
-		cleanup
-		exit 1
-	fi
-	echo PASSED
-	cleanup
+	diff fout lsout || fail
+	pass ftest $fname $blocks
 }
 
-dtest 0 4096 
-dtest 0 8193
-dtest 0 8194
-dtest 1 4096 
-dtest 12288 4096 
-dtest 274432 4096 
-dtest 8388608 9000 
-dtest 16777216 20000
+dtest_mount 0 4096 
+dtest_mount 0 8193
+dtest_mount 0 8194
+dtest_mount 1 4096 
+dtest_mount 12288 4096 
+dtest_mount 274432 4096 
+dtest_mount 8388608 9000 
+dtest_mount 16777216 20000
 
-ftest device_table.txt 4096 
-
-exit 0
+ftest_mount device_table.txt 4096 
