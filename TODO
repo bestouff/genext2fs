@@ -9,3 +9,5 @@ Disclaimer: I'll probably never do all this ...
 
 - UUID generation
 - provide alternatives to glibc-specific library calls like getline()
+- confirm 8192 blocks-per-group upper limit for rev 0 filesystems
+  and increase if possible (bigger would be more space efficient)
