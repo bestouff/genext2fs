@@ -25,6 +25,7 @@
 // 	10 Sep 2000	Bugfix: device nodes endianness		xavier.gueguen@col.bsf.alcatel.fr
 // 			Bugfix: getcwd values for Solaris	xavier.gueguen@col.bsf.alcatel.fr
 // 			Bugfix: ANSI scanf for non-GNU C	xavier.gueguen@col.bsf.alcatel.fr
+// 	28 Jun 2001	Bugfix: getcwd differs for Solaris/GNU	mike@sowbug.com
 
 
 // `genext2fs' is a mean to generate an ext2 filesystem
@@ -162,14 +163,19 @@ typedef unsigned int uint32;
 // overruns. the following macros use it if available or use a
 // hacky workaround
 // moreover it will define a snprintf() like a sprintf(), i.e.
-// without the buffer overrun checking.
+// without the buffer overrun checking,
+// and the correct getcwd() size argument for automatic allocation,
+// which of course is not the same on Solaris, old glibc and new
+// glibc ...
 
 #ifdef __GNUC__
 #define SCANF_PREFIX "a"
 #define SCANF_STRING(s) (&s)
+#define GETCWD_SIZE 0
 #else
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
+#define GETCWD_SIZE -1
 inline int snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
@@ -1601,7 +1607,7 @@ int main(int argc, char **argv)
 				fclose(fh);
 				break;
 			case S_IFDIR:
-				if(!(pdir = getcwd(0, -1)))
+				if(!(pdir = getcwd(0, GETCWD_SIZE)))
 					pexit(dopt[i]);
 				if(chdir(dopt[i]) < 0)
 					pexit(dopt[i]);
