@@ -1265,15 +1265,17 @@ static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uin
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
 	truncate_nod(fs, nod);
 	get_nod(fs, nod)->i_size = size;
-	if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
-		error_msg_and_die("not enough mem to read file '%s'", name);
-	memset(b, 0,rndup(size, BLOCKSIZE));
-	if(f)
-		fread(b, size, 1, f); // FIXME: ugly. use mmap() ...
-	else
-		memset(b, 0, size); // .. or handle b = 0
-	extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
-	free(b);
+	if (size) {
+		if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
+			error_msg_and_die("not enough mem to read file '%s'", name);
+		memset(b, 0,rndup(size, BLOCKSIZE));
+		if(f)
+			fread(b, size, 1, f); // FIXME: ugly. use mmap() ...
+		else
+			memset(b, 0, size); // .. or handle b = 0
+		extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+		free(b);
+	}
 	return nod;
 }
 
@@ -1348,8 +1350,14 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 		lineno++;
 		if((c = strchr(line, '#')))
 			*c = 0;
-		free(path); path = NULL;
-		free(path2); path2 = NULL;
+		if (path) {
+			free(path);
+			path = NULL;
+		}
+		if (path2) {
+			free(path2);
+			path2 = NULL;
+		}
 		nbargs = sscanf (line, "%" SCANF_PREFIX "s %c %lo %lu %lu %lu %lu %lu %lu %lu",
 					SCANF_STRING(path), &type, &mode, &uid, &gid, &major, &minor,
 					&start, &increment, &count);
@@ -1425,9 +1433,12 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
 		}
 	}
-	free(line);
-	free(path);
-	free(path2);
+	if (line)
+		free(line);
+	if (path) 
+		free(path);
+	if (path2)
+		free(path2);
 }
 
 // adds a tree of entries to the filesystem from current dir
