@@ -14,7 +14,11 @@ dtest () {
 	echo "Testing with file of size $size "
 	mkdir -p test
 	cd test
-	dd if=/dev/zero of=file.$1 bs=1 count=$size 
+	if [ x$size == x0 ]; then
+		> file.$1
+	else
+		dd if=/dev/zero of=file.$1 bs=$size count=1 2>/dev/null
+	fi
 	cd ..
 	./genext2fs -b $blocks -d test ext2.img 
 	if ! /sbin/e2fsck -fn ext2.img ; then
