@@ -527,7 +527,7 @@ uint32 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, uint32 *create, uint
 {
 	uint32 *bkref = 0;
 	uint32 *b;
-	uint32 extend = 0;
+	int extend = 0;
 	if(bw->bnum >= get_nod(fs, nod)->i_blocks / INOBLK)
 	{
 		if(create && (*create)--)
