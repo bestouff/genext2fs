@@ -1,7 +1,5 @@
 Disclaimer: I'll probably never do all this ...
 
-- add the mkfs.jffs2-compatible device list from Erik Andersen
-- support many group-descriptors (for >8MB fs)
 - support fancy ext2 options
 - support ext3
 
