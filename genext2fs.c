@@ -256,7 +256,7 @@ static int count_ino_in_hashtable(void)
 /* Defines for accessing group details */
 
 // Number of groups in the filesystem
-#define GRP_NBGROUPS(fs) ( ((fs)->sb.s_blocks_count-1)/(fs)->sb.s_blocks_per_group )
+#define GRP_NBGROUPS(fs) ( ((fs)->sb.s_blocks_count+(fs)->sb.s_blocks_per_group-1)/(fs)->sb.s_blocks_per_group )
 
 // Get group block bitmap (bbm) given the group number
 #define GRP_GET_GROUP_BBM(fs,grp) ( get_blk((fs),(fs)->gd[(grp)].bg_block_bitmap) )
