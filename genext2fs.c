@@ -1200,10 +1200,9 @@ static inline uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *nam
 }
 
 // make a symlink
-static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size,
-	uint8 * b, uint32 ctime, uint32 mtime)
+static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 *b, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
-	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK, 0, 0, 0, 0, ctime, mtime);
+	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO, uid, gid, 0, 0, ctime, mtime);
 	truncate_nod(fs, nod);
 	get_nod(fs, nod)->i_size = size;
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
@@ -1257,6 +1256,12 @@ static uint32 get_mode(struct stat *st)
 		mode |= FM_IWOTH;
 	if(st->st_mode & S_IXOTH)
 		mode |= FM_IXOTH;
+	if(st->st_mode & S_ISUID)
+		mode |= FM_ISUID;
+	if(st->st_mode & S_ISGID)
+		mode |= FM_ISGID;
+	if(st->st_mode & S_ISVTX)
+		mode |= FM_ISVTX;
 	return mode;
 }
 
@@ -1442,7 +1447,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					break;
 				case S_IFLNK:
 					b = xreadlink(dent->d_name);
-					mklink_fs(fs, this_nod, name, st.st_size, b, ctime, mtime);
+					mklink_fs(fs, this_nod, name, st.st_size, b, uid, gid, ctime, mtime);
 					free(b);
 					break;
 				case S_IFREG:
