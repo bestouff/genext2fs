@@ -2320,14 +2320,16 @@ main(int argc, char **argv)
 	  { "squash-perms",	no_argument,		NULL, 'P' },
 	  { "timestamp",	required_argument,	NULL, 't' },
 	  { "fill-value",	required_argument,	NULL, 'e' },
-	  { "allow-holes",	no_argument, 		&holes, 1 },
-	  { "verbose",		no_argument,		&verbose, 1 },
+	  { "allow-holes",	no_argument, 		NULL, 'z' },
+	  { "verbose",		no_argument,		NULL, 'v' },
 	  { "help",		no_argument,		NULL, 'h' },
 	  { 0, 0, 0, 0}
 	} ;
 
 	app_name = argv[0];
 	while((c = getopt_long(argc, argv, "x:d:D:f:b:i:r:g:qUPt:e:zvh", longopts, NULL)) != EOF) {
+printf ("case char: %c\n", c) ;
+printf ("optarg: %s\n", optarg) ;
 		switch(c)
 		{
 			case 'x':
