@@ -19,12 +19,15 @@
 genext2fs \- ext2 filesystem generator for embedded systems
 .SH SYNOPSIS
 .B genext2fs
-.RI [ options ]  " image"
+.RI "[ options ] [ output\-image ]"
 .SH DESCRIPTION
 \fBgenext2fs\fP generates an ext2 filesystem
 as a normal (non-root) user. It does not require you to mount
 the image file to copy files on it, nor does it require that
 you become the superuser to make device nodes.
+
+The filesystem image is created in the file \fIoutput-image\fP. If not
+specified, it is sent to stdout.
 .SH OPTIONS
 .TP
 .BI "\-x, \-\-starting\-image image"
