@@ -528,6 +528,22 @@ typedef struct
 #define udecl32(x) this->x = swab32(this->x);
 #define utdecl32(x,n) { int i; for(i=0; i<n; i++) this->x[i] = swab32(this->x[i]); }
 
+#define HDLINK_CNT   16
+static int32 hdlink_cnt = HDLINK_CNT;
+struct hdlink_s
+{
+	uint32	src_inode;
+	uint32	dst_nod;
+};
+
+struct hdlinks_s 
+{
+	int32 count;
+	struct hdlink_s *hdl;
+};
+
+static struct hdlinks_s hdlinks;
+
 static void swap_sb(superblock *sb)
 {
 #define this sb
@@ -675,6 +691,18 @@ static char *xreadlink(const char *path)
 
 	buf[readsize] = '\0';
 	return buf;
+}
+
+int	is_hardlink(ino_t inode)
+{
+	int i;
+
+	for(i = 0; i < hdlinks.count; i++) {
+		if(hdlinks.hdl[i].src_inode == inode)
+			return i;
+		
+	}
+	return -1;		
 }
 
 // printf helper macro
@@ -1413,6 +1441,8 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 	struct dirent *dent;
 	struct stat st;
 	uint8 *b;
+	uint32 save_nod;
+
 	if(!(dh = opendir(".")))
 		perror_msg_and_die(".");
 	while((dent = readdir(dh)))
@@ -1452,20 +1482,31 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 				default:
 					break;
 			}
-		else
+		else {
+			save_nod = 0;
+			/* Check for hardlinks */
+			if (!S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_nlink > 1) {
+				int32 hdlink = is_hardlink(st.st_ino);
+				if (hdlink >= 0) {
+					add2dir(fs, this_nod, hdlinks.hdl[hdlink].dst_nod, name);
+					continue;
+				} else {
+					save_nod = 1;
+				}
+			}
 			switch(st.st_mode & S_IFMT)
 			{
 				case S_IFCHR:
-					mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
 					break;
 				case S_IFBLK:
-					mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
 					break;
 				case S_IFIFO:
-					mknod_fs(fs, this_nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFSOCK:
-					mknod_fs(fs, this_nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
 					b = xreadlink(dent->d_name);
@@ -1474,7 +1515,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					break;
 				case S_IFREG:
 					fh = xfopen(dent->d_name, "r");
-					mkfile_fs(fs, this_nod, name, mode, st.st_size, fh, uid, gid, ctime, mtime);
+					nod = mkfile_fs(fs, this_nod, name, mode, st.st_size, fh, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -1487,6 +1528,20 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 				default:
 					error_msg("ignoring entry %s", name);
 			}
+			if (save_nod) {
+				if (hdlinks.count == hdlink_cnt) {
+					if ((hdlinks.hdl = 
+						 realloc (hdlinks.hdl, (hdlink_cnt + HDLINK_CNT) *
+								  sizeof (struct hdlink_s))) == NULL) {
+						error_msg_and_die("Not enough memory");
+					}
+					hdlink_cnt += HDLINK_CNT;
+				}
+				hdlinks.hdl[hdlinks.count].src_inode = st.st_ino;
+				hdlinks.hdl[hdlinks.count].dst_nod = nod;
+				hdlinks.count++;
+			}
+		}
 	}
 	closedir(dh);
 }
@@ -2241,6 +2296,12 @@ int main(int argc, char **argv)
 		showhelp();
 		exit(0);
 	}
+
+	hdlinks.hdl = (struct hdlink_s *)malloc(hdlink_cnt * sizeof(struct hdlink_s));
+	if (!hdlinks.hdl)
+		error_msg_and_die("Not enough memory");
+	hdlinks.count = 0 ;
+
 	if(fsin)
 	{
 		if(strcmp(fsin, "-"))

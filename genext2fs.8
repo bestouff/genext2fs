@@ -117,10 +117,6 @@ This device table creates the /dev directory, a character device
 node /dev/mem (major 1, minor 1), it also creates /dev/tty, 
 /dev/tty[0-5], /dev/loop[0-1], /dev/hda, /dev/hda0 to /dev/hda15 and /dev/log socket.
 
-.SH BUGS
-\fBgenext2fs\fP does not support hard links.  Hard links present in the input
-tree will be represented as separate files in the ext2 image.
-
 .SH SEE ALSO
 .BR mkfs (8),
 .BR genromfs (8),
