@@ -271,7 +271,8 @@ snprintf(char *str, size_t n, const char *fmt, ...)
 #if defined(__APPLE__) && defined(__GNUC__)
 // getline() replacement for Darwin, might work on other systems
 // written according to the getline man page included with Debian Linux
-ssize_t getline(char **lineptr, size_t *n, FILE *stream)
+ssize_t 
+getline(char **lineptr, size_t *n, FILE *stream)
 {
 	char *buf = *lineptr;	// could be NULL, in which case we allocate
 	size_t bufsize = *n;	// current buffer size, adjust if we (re)alloc
