@@ -1397,7 +1397,7 @@ static uint32 get_mode(struct stat *st)
     block, fifo, or directory does not exist, it will be created.
 */
 
-static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, struct stats *stats)
+static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
 	unsigned long mode, uid, gid, major, minor;
 	unsigned long start, increment, count;
@@ -1408,7 +1408,7 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 	int nbargs, lineno = 0;
 
 	fstat(fileno(fh), &st);
-	ctime = st.st_ctime;
+	ctime = fs_timestamp;
 	mtime = st.st_mtime;
 	while(getline(&line, &len, fh) >= 0)
 	{
@@ -1509,7 +1509,7 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squ
 }
 
 // adds a tree of entries to the filesystem from current dir
-static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, struct stats *stats)
+static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
 	uint32 nod;
 	uint32 uid, gid, mode, ctime, mtime;
@@ -1530,7 +1530,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 		lstat(dent->d_name, &st);
 		uid = st.st_uid;
 		gid = st.st_gid;
-		ctime = st.st_ctime;
+		ctime = fs_timestamp;
 		mtime = st.st_mtime;
 		name = dent->d_name;
 		mode = get_mode(&st);
@@ -1554,7 +1554,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					stats->ninodes++;
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
 					chdir("..");
 					break;
 				default:
@@ -1600,7 +1600,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					nod = mkdir_fs(fs, this_nod, name, mode, uid, gid, ctime, mtime);
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
 					chdir("..");
 					break;
 				default:
@@ -1781,7 +1781,7 @@ static void swap_badfs(filesystem *fs)
 }
 
 // initialize an empty filesystem
-static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
+static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp)
 {
 	int i;
 	filesystem *fs;
@@ -1794,7 +1794,6 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	int j;
 	uint8 *bbm,*ibm;
 	inode *itab0;
-	uint32 now = time(NULL);
 	
 	if(nbblocks < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
@@ -1837,7 +1836,9 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	fs->sb.s_blocks_per_group = nbblocks_per_group;
 	fs->sb.s_frags_per_group = nbblocks_per_group;
 	fs->sb.s_inodes_per_group = nbinodes_per_group;
+	fs->sb.s_wtime = fs_timestamp;
 	fs->sb.s_magic = EXT2_MAGIC_NUMBER;
+	fs->sb.s_lastcheck = fs_timestamp;
 
 	// set up groupdescriptors
 	for(i = 0,bbmpos=2+gd,ibmpos=3+gd,itblpos =4+gd;
@@ -1895,6 +1896,9 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	fs->gd[0].bg_used_dirs_count = 1;
 	itab0 = (inode *)get_blk(fs,fs->gd[0].bg_inode_table);
 	itab0[EXT2_ROOT_INO-1].i_mode = FM_IFDIR | FM_IRWXU | FM_IRGRP | FM_IROTH | FM_IXGRP | FM_IXOTH; 
+	itab0[EXT2_ROOT_INO-1].i_ctime = fs_timestamp;
+	itab0[EXT2_ROOT_INO-1].i_mtime = fs_timestamp;
+	itab0[EXT2_ROOT_INO-1].i_atime = fs_timestamp;
 	itab0[EXT2_ROOT_INO-1].i_size = BLOCKSIZE;
 	itab0[EXT2_ROOT_INO-1].i_links_count = 2;
 
@@ -1914,7 +1918,7 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	// make lost+found directory and reserve blocks
 	if(fs->sb.s_r_blocks_count)
 	{
-		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, now, now);
+		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, fs_timestamp, fs_timestamp);
 		memset(b, 0, BLOCKSIZE);
 		((directory*)b)->d_rec_len = BLOCKSIZE;
 		/* We run into problems with e2fsck if directory lost+found grows
@@ -2277,6 +2281,7 @@ static void showhelp(void)
 	"  -q               Squash permissions and owners making all files be owned by root\n"
 	"  -U               Squash owners making all files be owned by root\n"
 	"  -P               Squash permissions on all files\n"
+	"  -t seconds       Timestamp for filesystem and inode creation\n"
 	"  -v               Print resulting filesystem structure\n"
 	"  -h               Show this help\n\n"
 	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
@@ -2297,6 +2302,7 @@ int main(int argc, char **argv)
 	int nbresrvd = -1;
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
+	uint32 fs_timestamp = -1;
 	char * fsout;
 	char * fsin = 0;
 	char * dopt[MAX_DOPT];
@@ -2316,7 +2322,7 @@ int main(int argc, char **argv)
 	struct stats stats;
 
 	app_name = argv[0];
-	while((c = getopt(argc, argv, "x:d:b:i:r:g:e:zvhD:f:qUP")) != EOF)
+	while((c = getopt(argc, argv, "x:d:b:i:r:g:e:zvhD:f:qUPt:")) != EOF)
 		switch(c)
 		{
 			case 'x':
@@ -2357,6 +2363,9 @@ int main(int argc, char **argv)
 				break;
 			case 'v':
 				verbose = 1;
+				break;
+			case 't':
+				fs_timestamp = atoi(optarg);
 				break;
 			case 'h':
 				showhelp();
@@ -2405,7 +2414,7 @@ int main(int argc, char **argv)
 			{
 				case S_IFREG:
 					fh = xfopen(dopt[i], "r");
-					add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, &stats);
+					add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, 0, &stats);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -2413,13 +2422,13 @@ int main(int argc, char **argv)
 						perror_msg_and_die(dopt[i]);
 					if(chdir(dopt[i]) < 0)
 						perror_msg_and_die(dopt[i]);
-					add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, &stats);
+					add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, 0, &stats);
 					if(chdir(pdir) < 0)
 						perror_msg_and_die(pdir);
 					free(pdir);
 					break;
 				default:
-					error_msg_and_die("%s in neither a file nor a directory", dopt[i]);
+					error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
 			}
 		}
 	
@@ -2442,7 +2451,9 @@ int main(int argc, char **argv)
 			nbinodes = nbblocks * BLOCKSIZE / rndup(BYTES_PER_INODE, BLOCKSIZE);
 		if(nbresrvd == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
-		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes);
+		if(fs_timestamp == -1)
+			fs_timestamp = time(NULL);
+		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes, fs_timestamp);
 	}
 	for(i = 0; i < didx; i++)
 	{
@@ -2454,7 +2465,7 @@ int main(int argc, char **argv)
 		{
 			case S_IFREG:
 				fh = xfopen(dopt[i], "r");
-				add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, NULL);
+				add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, fs_timestamp, NULL );
 				fclose(fh);
 				break;
 			case S_IFDIR:
@@ -2462,13 +2473,13 @@ int main(int argc, char **argv)
 					perror_msg_and_die(dopt[i]);
 				if(chdir(dopt[i]) < 0)
 					perror_msg_and_die(dopt[i]);
-				add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, NULL);
+				add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, fs_timestamp, NULL );
 				if(chdir(pdir) < 0)
 					perror_msg_and_die(pdir);
 				free(pdir);
 				break;
 			default:
-				error_msg_and_die("%s in neither a file nor a directory", dopt[i]);
+				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
 		}
 	}
 	if(emptyval)
