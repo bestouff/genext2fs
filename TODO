@@ -6,3 +6,5 @@ Disclaimer: I'll probably never do all this ...
 - add tar.gz extraction capabilities ?
 
 - find a better way to guess filesystem's size
+
+- UUID generation
