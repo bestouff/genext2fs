@@ -1202,6 +1202,7 @@ static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, siz
 {
 	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK, 0, 0, 0, 0, ctime, mtime);
 	truncate_nod(fs, nod);
+	get_nod(fs, nod)->i_size = size;
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
 	{
 		strncpy((char*)get_nod(fs, nod)->i_block, (char*)b, size);
