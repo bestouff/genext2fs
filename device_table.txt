@@ -10,10 +10,10 @@
 # and (assuming the file /sbin/foobar exists) it will be made setuid
 # root (regardless of what its permissions are on the host filesystem.
 # Furthermore, you can use a single table entry to create a many device
-# minors.  For example, if I wanted to create /dev/hda and /dev/hda[0-15]
+# minors.  For example, if I wanted to create /dev/hda and /dev/hda[1-15]
 # I could just use the following two table entries:
 #   /dev/hda    b       640     0       0       3       0       0       0       -
-#   /dev/hda    b       640     0       0       3       1       1       1       15
+#   /dev/hda    b       640     0       0       3       1       1       1       16
 # 
 # Device table entries take the form of:
 # <name>    <type>      <mode>  <uid>   <gid>   <major> <minor> <start> <inc>   <count>
