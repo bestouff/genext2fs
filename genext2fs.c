@@ -483,8 +483,8 @@ typedef struct
 #if BLOCKSIZE == 1024
 typedef struct
 {
-	block zero;          // The famous block 0
-	superblock sb;       // The superblock
+	block zero;            // The famous block 0
+	superblock sb;         // The superblock
 	groupdescriptor gd[0]; // The group descriptors
 } filesystem;
 #else
@@ -554,8 +554,6 @@ static void swap_block(block b)
 #undef utdecl32
 
 static char * app_name;
-static int squash_uids = 0;
-static int squash_perms = 0;
 static const char *const memory_exhausted = "memory exhausted";
 
 // error (un)handling
@@ -1027,8 +1025,15 @@ static void extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 	}
 }
 
+static void truncate_nod(filesystem *fs, uint32 nod)
+{
+	inode *node = get_nod(fs, nod);
+assert(!node->i_size);
+#warning truncate_nod() no yet implemented
+}
+
 // link an entry (inode #) to a directory
-static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, uint32 mode, uid_t uid, gid_t gid, time_t ctime)
+static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 {
 	blockwalker bw;
 	uint32 bk;
@@ -1037,18 +1042,6 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, u
 	int reclen, nlen;
 	inode *node;
 	inode *pnode;
-
-	/* Squash all permissions so files are owned by root 
-	 * and file permissions have group/other perms removed */
-	if (squash_uids) {
-		uid = gid = 0;
-	}
-	if (squash_perms) {
-		if (!S_ISLNK(mode)) {
-			mode &= ~(S_IWGRP | S_IWOTH);
-			mode &= ~(S_ISUID | S_ISGID);
-		}
-	}
 
 	pnode = get_nod(fs, dnod);
 	if(!S_ISDIR(pnode->i_mode))
@@ -1076,12 +1069,6 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, u
 				node->i_links_count++;
 				d->d_name_len = nlen;
 				strncpy(d->d_name, name, nlen);
-				node->i_mode = mode;
-				node->i_uid = uid;
-				node->i_gid = gid;
-				node->i_atime = ctime;
-				node->i_ctime = ctime;
-				node->i_mtime = ctime;
 				return;
 			}
 			// if entry with enough room (last one?), shrink it & use it
@@ -1097,12 +1084,6 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, u
 				node->i_links_count++;
 				d->d_name_len = nlen;
 				strncpy(d->d_name, name, nlen);
-				node->i_mode = mode;
-				node->i_uid = uid;
-				node->i_gid = gid;
-				node->i_atime = ctime;
-				node->i_ctime = ctime;
-				node->i_mtime = ctime;
 				return;
 			}
 		}
@@ -1116,12 +1097,6 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name, u
 	d->d_rec_len = BLOCKSIZE;
 	d->d_name_len = nlen;
 	strncpy(d->d_name, name, nlen);
-	node->i_mode = mode;
-	node->i_uid = uid;
-	node->i_gid = gid;
-	node->i_atime = ctime;
-	node->i_ctime = ctime;
-	node->i_mtime = ctime;
 	extend_blk(fs, dnod, b, 1);
 	get_nod(fs, dnod)->i_size += BLOCKSIZE;
 	free_workblk(b);
@@ -1171,32 +1146,62 @@ static uint32 find_path(filesystem *fs, uint32 nod, const char * name)
 	return nod;
 }
 
-// make a full-fledged directory (i.e. with "." & "..")
-static uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
-	uid_t uid, gid_t gid, time_t ctime)
+// create a simple inode
+static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
 {
 	uint32 nod;
+	inode *node;
 	if((nod = find_dir(fs, parent_nod, name)))
-		return nod;
-	nod = alloc_nod(fs);
-	mode |= FM_IFDIR;
-	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
-	add2dir(fs, nod, nod, ".", mode, uid, gid, ctime);
-	add2dir(fs, nod, parent_nod, "..", mode, uid, gid, ctime);
-	fs->gd[GRP_GROUP_OF_INODE(fs,nod)].bg_used_dirs_count++;
+	{
+		node = get_nod(fs, nod);
+		if((node->i_mode & FM_IFMT) != (mode & FM_IFMT))
+			error_msg_and_die("node '%s' already exists and isn't of the same type", name);
+		node->i_mode = mode;
+	}
+	else
+	{
+		nod = alloc_nod(fs);
+		node = get_nod(fs, nod);
+		node->i_mode = mode;
+		add2dir(fs, parent_nod, nod, name);
+		switch(mode & FM_IFMT)
+		{
+			case FM_IFLNK:
+				mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO;
+				break;
+			case FM_IFBLK:
+			case FM_IFCHR:
+				((uint8*)get_nod(fs, nod)->i_block)[0] = minor;
+				((uint8*)get_nod(fs, nod)->i_block)[1] = major;
+				break;
+			case FM_IFDIR:
+				add2dir(fs, nod, nod, ".");
+				add2dir(fs, nod, parent_nod, "..");
+				fs->gd[GRP_GROUP_OF_INODE(fs,nod)].bg_used_dirs_count++;
+				break;
+		}
+	}
+	node->i_uid = uid;
+	node->i_gid = gid;
+	node->i_atime = mtime;
+	node->i_ctime = ctime;
+	node->i_mtime = mtime;
 	return nod;
+}
+
+// make a full-fledged directory (i.e. with "." & "..")
+static inline uint32 mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
+	uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+{
+	return mknod_fs(fs, parent_nod, name, mode|FM_IFDIR, uid, gid, 0, 0, ctime, mtime);
 }
 
 // make a symlink
 static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size,
-	uint8 * b, uid_t uid, gid_t gid, time_t ctime)
+	uint8 * b, uint32 ctime, uint32 mtime)
 {
-	uint32 mode;
-	uint32 nod = alloc_nod(fs);
-	mode = FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
-	get_nod(fs, nod)->i_mode = mode;
-	get_nod(fs, nod)->i_size = size;
-	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
+	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK, 0, 0, 0, 0, ctime, mtime);
+	truncate_nod(fs, nod);
 	if(size <= 4 * (EXT2_TIND_BLOCK+1))
 	{
 		strncpy((char*)get_nod(fs, nod)->i_block, (char*)b, size);
@@ -1207,13 +1212,12 @@ static uint32 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, siz
 }
 
 // make a file from a FILE*
-static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, time_t ctime)
+static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint8 * b;
-	uint32 nod = alloc_nod(fs);
-	mode |= FM_IFREG;
+	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
+	truncate_nod(fs, nod);
 	get_nod(fs, nod)->i_size = size;
-	add2dir(fs, parent_nod, nod, name, mode, uid, gid, ctime);
 	if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
 		error_msg_and_die("not enough mem to read file '%s'", name);
 	memset(b, 0,rndup(size, BLOCKSIZE));
@@ -1230,14 +1234,6 @@ static uint32 mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uin
 static uint32 get_mode(struct stat *st)
 {
 	uint32 mode = 0;
-
-	/* Squash file permissions as needed */
-	if (squash_perms) {
-		if (!S_ISLNK(mode)) {
-			st->st_mode &= ~(S_IWGRP | S_IWOTH);
-			st->st_mode &= ~(S_ISUID | S_ISGID);
-		}
-	}
 
 	if(st->st_mode & S_IRUSR)
 		mode |= FM_IRUSR | FM_IRGRP | FM_IROTH;
@@ -1272,51 +1268,6 @@ static char * dirname(const char * fullpath)
 	return n;
 }
 
-// create or fixup perms of an inode
-static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime)
-{
-	uint32 nod;
-	inode *node;
-	if((nod = find_dir(fs, parent_nod, name)))
-	{
-		node = get_nod(fs, nod);
-		if((node->i_mode & FM_IFMT) != (mode & FM_IFMT))
-			error_msg_and_die("node '%s' already exists and isn't of the same type", name);
-	}
-	else
-	{
-		switch(mode & FM_IFMT)
-		{
-			case FM_IFBLK:
-			case FM_IFCHR:
-                                nod = alloc_nod(fs);
-                                ((uint8*)get_nod(fs, nod)->i_block)[0] = minor;
-                                ((uint8*)get_nod(fs, nod)->i_block)[1] = major;
-                                add2dir(fs, parent_nod, nod, name, 0, 0, 0, 0);
-				break;
-			case FM_IFIFO:
-                                nod = alloc_nod(fs);
-                                add2dir(fs, parent_nod, nod, name, 0, 0, 0, 0);
-				break;
-			case FM_IFDIR:
-                                nod = mkdir_fs(fs, parent_nod, name, mode, 0, 0, 0);
-				break;
-			default:
-				error_msg("can't create node '%s' from scratch", name);
-				return 0;
-			
-		}
-		node = get_nod(fs, nod);
-	}
-	node->i_mode = mode;
-	node->i_uid = uid;
-	node->i_gid = gid;
-	node->i_atime = ctime;
-	node->i_ctime = ctime;
-	node->i_mtime = ctime;
-	return nod;
-}
-
 // add or fixup entries to the filesystem from a text file
 /*  device table entries take the form of:
     <path>	<type> <mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
@@ -1336,16 +1287,19 @@ static uint32 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint
     block, fifo, or directory does not exist, it will be created.
 */
 
-static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, struct stats *stats)
+static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, struct stats *stats)
 {
 	unsigned long mode, uid, gid, major, minor;
 	unsigned long start, increment, count;
-        uint32 nod;
-        char *c, type, *path, *dir, *name, *line = NULL;
+	uint32 nod, ctime, mtime;
+	char *c, type, *path, *dir, *name, *line = NULL;
 	size_t len;
+	struct stat st;
 	int nbargs, lineno = 0;
-	time_t now = time(NULL);
 
+	fstat(fileno(fh), &st);
+	ctime = st.st_ctime;
+	mtime = st.st_mtime;
 	while(getline(&line, &len, fh) >= 0)
 	{
 		mode = uid = gid = major = minor = 0;
@@ -1365,46 +1319,50 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, struct 
 		}
 		if(stats)
 		{
-                	free(path);
+			free(path);
 			stats->ninodes += count ? count : 1;
 		}
 		else
 		{
+			if(squash_uids)
+				uid = gid = 0;
+			if(squash_perms)
+				mode &= ~(FM_IRWXG | FM_IRWXO);
 			mode &= FM_IMASK;
-                        name = basename(path);
-                        dir = dirname(path);
-                        free(path);
-                        if(!(nod = find_path(fs, this_nod, dir)))
+			name = basename(path);
+			dir = dirname(path);
+			free(path);
+			if(!(nod = find_path(fs, this_nod, dir)))
 			{
-                                error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
+				error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
 				free(name);
 				free(dir);
 				continue;
 			}
-                        free(dir);
-                        if((!strcmp(name, ".")) || (!strcmp(name, "..")))
-                        {
-                                error_msg("device table line %d skipped", lineno);
-                                free(name);
-                                continue;
-                        }
-        
+			free(dir);
+			if((!strcmp(name, ".")) || (!strcmp(name, "..")))
+			{
+				error_msg("device table line %d skipped", lineno);
+				free(name);
+				continue;
+			}
+	
 			switch (type)
 			{
 				case 'd':
-					mode |= S_IFDIR;
+					mode |= FM_IFDIR;
 					break;
 				case 'f':
-					mode |= S_IFREG;
+					mode |= FM_IFREG;
 					break;
 				case 'p':
-					mode |= S_IFIFO;
+					mode |= FM_IFIFO;
 					break;
 				case 'c':
-					mode |= S_IFCHR;
+					mode |= FM_IFCHR;
 					break;
 				case 'b':
-					mode |= S_IFBLK;
+					mode |= FM_IFBLK;
 					break;
 				default:
 					error_msg("device table line %d skipped: bad type '%c' for entry '%s'", lineno, type, name);
@@ -1420,12 +1378,12 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, struct 
 				for(i = start; i < count; i++)
 				{
 					snprintf(dname, len, "%s%u", name, i);
-					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor, now);
+					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor, ctime, mtime);
 				}
 				free(dname);
 			}
 			else
-				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, now);
+				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
 			free(name);
 		}
 	}
@@ -1433,9 +1391,11 @@ static void add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, struct 
 }
 
 // adds a tree of entries to the filesystem from current dir
-static void add2fs_from_dir(filesystem *fs, uint32 this_nod, struct stats *stats)
+static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, struct stats *stats)
 {
 	uint32 nod;
+	uint32 uid, gid, mode, ctime, mtime;
+	const char *name;
 	FILE *fh;
 	DIR *dh;
 	struct dirent *dent;
@@ -1448,6 +1408,16 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, struct stats *stats
 		if((!strcmp(dent->d_name, ".")) || (!strcmp(dent->d_name, "..")))
 			continue;
 		lstat(dent->d_name, &st);
+		uid = st.st_uid;
+		gid = st.st_gid;
+		ctime = st.st_ctime;
+		mtime = st.st_mtime;
+		name = dent->d_name;
+		mode = get_mode(&st);
+		if(squash_uids)
+			uid = gid = 0;
+		if(squash_perms)
+			mode &= ~(FM_IRWXG | FM_IRWXO);
 		if(stats)
 			switch(st.st_mode & S_IFMT)
 			{
@@ -1464,7 +1434,7 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, struct stats *stats
 					stats->ninodes++;
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
-					add2fs_from_dir(fs, nod, stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, stats);
 					chdir("..");
 					break;
 				default:
@@ -1474,37 +1444,33 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, struct stats *stats
 			switch(st.st_mode & S_IFMT)
 			{
 				case S_IFCHR:
+					mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
+					break;
 				case S_IFBLK:
-					nod = alloc_nod(fs);
-					get_nod(fs, nod)->i_mode = (((st.st_mode & S_IFMT) == S_IFCHR) ? FM_IFCHR : FM_IFBLK) | get_mode(&st);
-					((uint8*)get_nod(fs, nod)->i_block)[0] = (st.st_rdev & 0xff);
-					((uint8*)get_nod(fs, nod)->i_block)[1] = (st.st_rdev >> 8);
-					add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
 					break;
 				case S_IFIFO:
-					nod = alloc_nod(fs);
-					get_nod(fs, nod)->i_mode = FM_IFIFO | get_mode(&st);
-					add2dir(fs, this_nod, nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					mknod_fs(fs, this_nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
 					b = xreadlink(dent->d_name);
-					mklink_fs(fs, this_nod, dent->d_name, st.st_size, b, st.st_uid, st.st_gid, st.st_ctime);
+					mklink_fs(fs, this_nod, name, st.st_size, b, ctime, mtime);
 					free(b);
 					break;
 				case S_IFREG:
 					fh = xfopen(dent->d_name, "r");
-					mkfile_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, st.st_ctime);
+					mkfile_fs(fs, this_nod, name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:
-					nod = mkdir_fs(fs, this_nod, dent->d_name, st.st_mode, st.st_uid, st.st_gid, st.st_ctime);
+					nod = mkdir_fs(fs, this_nod, name, st.st_mode, st.st_uid, st.st_gid, ctime, mtime);
 					if(chdir(dent->d_name) < 0)
-						perror_msg_and_die(dent->d_name);
-					add2fs_from_dir(fs, nod, stats);
+						perror_msg_and_die(name);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, stats);
 					chdir("..");
 					break;
 				default:
-					error_msg("ignoring entry %s", dent->d_name);
+					error_msg("ignoring entry %s", name);
 			}
 	}
 	closedir(dh);
@@ -1680,6 +1646,7 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	int j;
 	uint8 *bbm,*ibm;
 	inode *itab0;
+	uint32 now = time(NULL);
 	
 	if(nbblocks < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
@@ -1800,7 +1767,7 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	// make lost+found directory and reserve blocks
 	if(fs->sb.s_r_blocks_count)
 	{
-		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, time(NULL));
+		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, now, now);
 		memset(b, 0, BLOCKSIZE);
 		((directory*)b)->d_rec_len = BLOCKSIZE;
 		/* We run into problems with e2fsck if directory lost+found grows
@@ -2151,7 +2118,7 @@ static void showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
-	"  -x image     Use this image as a starting point\n"
+	"  -x image         Use this image as a starting point\n"
 	"  -d directory     Add this directory as source\n"
 	"  -b blocks        Size in blocks\n"
 	"  -i inodes        Number of inodes\n"
@@ -2192,6 +2159,8 @@ int main(int argc, char **argv)
 	int verbose = 0;
 	int holes = 0;
 	int emptyval = 0;
+	int squash_uids = 0;
+	int squash_perms = 0;
 	uint16 endian = 1;
 	int bigendian = !*(char*)&endian;
 	filesystem *fs;
@@ -2278,7 +2247,7 @@ int main(int argc, char **argv)
 			{
 				case S_IFREG:
 					fh = xfopen(dopt[i], "r");
-					add2fs_from_file(fs, EXT2_ROOT_INO, fh, &stats);
+					add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, &stats);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -2286,7 +2255,7 @@ int main(int argc, char **argv)
 						perror_msg_and_die(dopt[i]);
 					if(chdir(dopt[i]) < 0)
 						perror_msg_and_die(dopt[i]);
-					add2fs_from_dir(fs, EXT2_ROOT_INO, &stats);
+					add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, &stats);
 					if(chdir(pdir) < 0)
 						perror_msg_and_die(pdir);
 					free(pdir);
@@ -2327,7 +2296,7 @@ int main(int argc, char **argv)
 		{
 			case S_IFREG:
 				fh = xfopen(dopt[i], "r");
-				add2fs_from_file(fs, EXT2_ROOT_INO, fh, NULL);
+				add2fs_from_file(fs, EXT2_ROOT_INO, fh, squash_uids, squash_perms, NULL);
 				fclose(fh);
 				break;
 			case S_IFDIR:
@@ -2335,7 +2304,7 @@ int main(int argc, char **argv)
 					perror_msg_and_die(dopt[i]);
 				if(chdir(dopt[i]) < 0)
 					perror_msg_and_die(dopt[i]);
-				add2fs_from_dir(fs, EXT2_ROOT_INO, NULL);
+				add2fs_from_dir(fs, EXT2_ROOT_INO, squash_uids, squash_perms, NULL);
 				if(chdir(pdir) < 0)
 					perror_msg_and_die(pdir);
 				free(pdir);

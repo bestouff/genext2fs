@@ -9,7 +9,5 @@ Disclaimer: I'll probably never do all this ...
 
 - add tar.gz extraction capabilities ?
 
-
-- move stat_from_* and parse*/add2fs* to common backend
-- get rid of extra args to add2dir()
-- generalize mknod (use it as backend for mkdir, mkfile ...)
+- implement truncate_node
+- find a better way to guess filesystem's size
