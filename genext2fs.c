@@ -2143,7 +2143,7 @@ int main(int argc, char **argv)
 	int nbresrvd = -1;
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
-	char * fsout = "-";
+	char * fsout;
 	char * fsin = 0;
 	char * dopt[MAX_DOPT];
 	int didx = 0;
@@ -2215,6 +2215,11 @@ int main(int argc, char **argv)
 		error_msg_and_die("too many arguments");
 	if(optind == (argc - 1))
 		fsout = argv[optind];
+	else
+	{
+		showhelp();
+		exit(0);
+	}
 	if(fsin)
 	{
 		if(strcmp(fsin, "-"))
@@ -2263,12 +2268,12 @@ int main(int argc, char **argv)
 	
 		if(tmp_nbblocks > nbblocks)
 		{
-			printf("number of blocks too low, increasing to %d\n",tmp_nbblocks);
+			fprintf(stderr, "number of blocks too low, increasing to %d\n",tmp_nbblocks);
 			nbblocks = tmp_nbblocks;
 		}
 		if(tmp_nbinodes > nbinodes)
 		{
-			printf("number of inodes too low, increasing to %d\n",tmp_nbinodes);
+			fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
 			nbinodes = tmp_nbinodes;
 		}
 		if(nbblocks == -1)
