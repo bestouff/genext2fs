@@ -2238,28 +2238,21 @@ showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
-	"  -x,     --starting-image <image>\n"
-	"  -d,     --source-directory <directory>\n"
-	"  -D, -f, --inode-table-file <file>\n"
-	"  -b,     --size-in-blocks <blocks>\n"
-	"  -i,     --number-of-inodes <number of inodes>\n"
-	"  -r,     --reserved-blocks <number of reserved blocks>\n"
-	"  -g,     --block-map-file <path>\n"
-	"                Generate a block map file for this path.\n"
-	"  -e,     --fill-value <value>\n"
-	"                Fill unallocated blocks with value.\n"
-	"  -z,     --allow-holes\n"
-	"                Allow files with holes.\n"
-	"  -q,     --squash-all\n"
-	"                Squash permissions and owners making all files be owned by root.\n"
-	"  -U,     --squash-uids\n"
-	"                Squash owners making all files be owned by root.\n"
-	"  -P,     --squash-perms\n"
-	"                Squash permissions on all files.\n"
-	"  -t,     --timestamp <value>\n"
-	"                Timestamp for filesystem and inode creation in seconds.\n"
-	"  -v,     --verbose\n"
-	"  -h,     --help\n\n"
+	"  -x, --starting-image <image>\n"
+	"  -d, --root <directory>\n"
+	"  -D, --devtable <file>\n"
+	"  -b, --size-in-blocks <blocks>\n"
+	"  -i, --number-of-inodes <number of inodes>\n"
+	"  -r, --reserved-blocks <number of reserved blocks>\n"
+	"  -g, --block-map <path>     Generate a block map file for this path.\n"
+	"  -e, --fill-value <value>   Fill unallocated blocks with value.\n"
+	"  -z, --allow-holes          Allow files with holes.\n"
+	"  -f, --faketime             Set filesystem timestamps to 0 (for testing).\n"
+	"  -q, --squash               Same as \"-U -P\".\n"
+	"  -U, --squash-uids          Squash owners making all files be owned by root.\n"
+	"  -P, --squash-perms         Squash permissions on all files.\n"
+	"  -h, --help\n"
+	"  -v, --verbose\n\n"
 	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
 }
 
@@ -2300,32 +2293,31 @@ main(int argc, char **argv)
 
 	struct option longopts[] = {
 	  { "starting-image",	required_argument,	NULL, 'x' },
-	  { "source-directory",	required_argument,	NULL, 'd' },
-	  { "inode-table-file",	required_argument,	NULL, 'f' },
+	  { "root",		required_argument,	NULL, 'd' },
+	  { "devtable",		required_argument,	NULL, 'D' },
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "number-of-inodes",	required_argument,	NULL, 'i' },
 	  { "reserved-blocks",	required_argument,	NULL, 'r' },
-	  { "block-map-file",	required_argument,	NULL, 'g' },
-	  { "squash-all",	no_argument,		NULL, 'q' },
-	  { "squash-uids",	no_argument,		NULL, 'U' },
-	  { "squash-perms",	no_argument,		NULL, 'P' },
-	  { "timestamp",	required_argument,	NULL, 't' },
+	  { "block-map",	required_argument,	NULL, 'g' },
 	  { "fill-value",	required_argument,	NULL, 'e' },
 	  { "allow-holes",	no_argument, 		NULL, 'z' },
-	  { "verbose",		no_argument,		NULL, 'v' },
+	  { "faketime",		no_argument,		NULL, 'f' },
+	  { "squash",		no_argument,		NULL, 'q' },
+	  { "squash-uids",	no_argument,		NULL, 'U' },
+	  { "squash-perms",	no_argument,		NULL, 'P' },
 	  { "help",		no_argument,		NULL, 'h' },
+	  { "verbose",		no_argument,		NULL, 'v' },
 	  { 0, 0, 0, 0}
 	} ;
 
 	app_name = argv[0];
-	while((c = getopt_long(argc, argv, "x:d:D:f:b:i:r:g:qUPt:e:zvh", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:i:r:g:e:zfqUPhv", longopts, NULL)) != EOF) {
 		switch(c)
 		{
 			case 'x':
 				fsin = optarg;
 				break;
 			case 'd':
-			case 'f':
 			case 'D':
 				dopt[didx++] = optarg;
 				break;
@@ -2347,6 +2339,9 @@ main(int argc, char **argv)
 			case 'z':
 				holes = 1;
 				break;
+			case 'f':
+				fs_timestamp = 0;
+				break;
 			case 'q':
 				squash_uids = 1;
 				squash_perms = 1;
@@ -2357,15 +2352,12 @@ main(int argc, char **argv)
 			case 'P':
 				squash_perms = 1;
 				break;
-			case 'v':
-				verbose = 1;
-				break;
-			case 't':
-				fs_timestamp = atoi(optarg);
-				break;
 			case 'h':
 				showhelp();
 				exit(0);
+			case 'v':
+				verbose = 1;
+				break;
 			default:
 				exit(1);
 		}
