@@ -87,6 +87,12 @@
 #include <sys/types.h>
 #include <getopt.h>
 
+struct stats {
+	unsigned long nblocks;
+	unsigned long ninodes;
+};
+
+#if 0
 #define HASH_SIZE	311		/* Should be prime */
 #define hash_inode(i)	((i) % HASH_SIZE)
 
@@ -98,11 +104,6 @@ typedef struct ino_dev_hash_bucket_struct {
 } ino_dev_hashtable_bucket_t;
 
 static ino_dev_hashtable_bucket_t *ino_dev_hashtable[HASH_SIZE];
-
-struct stats {
-	unsigned long nblocks;
-	unsigned long ninodes;
-};
 
 static int is_in_ino_dev_hashtable(const struct stat *statbuf, char **name)
 {
@@ -171,6 +172,7 @@ static int count_ino_in_hashtable(void)
 
 	return count;
 }
+#endif
 
 // block size
 
@@ -1044,10 +1046,10 @@ static void add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	inode *pnode;
 
 	pnode = get_nod(fs, dnod);
-	if(!S_ISDIR(pnode->i_mode))
+	if((pnode->i_mode & FM_IFMT) != FM_IFDIR)
 		error_msg_and_die("can't add '%s' to a non-directory", name);
 	if(!*name)
-		error_msg_and_die("bad name '%s' (not meaningful)", name);
+		error_msg_and_die("can't create an inode with an empty name");
 	if(strchr(name, '/'))
 		error_msg_and_die("bad name '%s' (contains a slash)", name);
 	nlen = strlen(name);
@@ -1460,11 +1462,11 @@ static void add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, in
 					break;
 				case S_IFREG:
 					fh = xfopen(dent->d_name, "r");
-					mkfile_fs(fs, this_nod, name, st.st_mode, st.st_size, fh, st.st_uid, st.st_gid, ctime, mtime);
+					mkfile_fs(fs, this_nod, name, mode, st.st_size, fh, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:
-					nod = mkdir_fs(fs, this_nod, name, st.st_mode, st.st_uid, st.st_gid, ctime, mtime);
+					nod = mkdir_fs(fs, this_nod, name, mode, uid, gid, ctime, mtime);
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
 					add2fs_from_dir(fs, nod, squash_uids, squash_perms, stats);
