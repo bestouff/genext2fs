@@ -260,7 +260,7 @@ static int count_ino_in_hashtable(void)
 /* Defines for accessing group details */
 
 // Number of groups in the filesystem
-#define GRP_NBGROUPS(fs) (((fs)->sb.s_blocks_count-1)/(fs)->sb.s_blocks_per_group )
+#define GRP_NBGROUPS(fs) (((fs)->sb.s_blocks_count+(fs)->sb.s_blocks_per_group-1)/(fs)->sb.s_blocks_per_group)
 
 // Get group block bitmap (bbm) given the group number
 #define GRP_GET_GROUP_BBM(fs,grp) ( get_blk((fs),(fs)->gd[(grp)].bg_block_bitmap) )
@@ -1644,33 +1644,28 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	if(nbblocks < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
 
-	/* nbblocks is the total number of blocks in the system. First 
-	 * calculate how much overhead blocks - inode table blocks,bitmap 
-	 * blocks,group descriptor blocks etc. - are needed assuming each 
-	 * group has BLOCKS_PER_GROUP blocks.Then recalculate nbblocks with 
-	 * this figure. Each group has the same number of blocks. So the fs 
-	 * has a size atleast the given value but usually rounded off to a i
-	 * higher number.
+	/* nbblocks is the total number of blocks in the filesystem. First
+	 * calculate the size of each group assuming each group has
+	 * BLOCKS_PER_GROUP blocks (which is the maximum). Then recalculate
+	 * blocks per group so that each group (except possibly the last one)
+	 * has the same number of blocks. nbinodes is the total number of
+	 * inodes in the system. These are divided between all groups.
+	 * Then calculate the overhead blocks - inode table blocks, bitmap
+	 * blocks, group descriptor blocks etc. 
 	 */
-	nbgroups = rndup(nbblocks,BLOCKS_PER_GROUP)/ BLOCKS_PER_GROUP;
-	nbinodes_per_group = nbinodes/nbgroups +1;
-	nbinodes_per_group = rndup(nbinodes_per_group, BLOCKSIZE/sizeof(inode));
+	
+	nbgroups = (nbblocks + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
+	nbblocks_per_group = rndup((nbblocks + nbgroups - 1)/nbgroups, 8);
+	nbinodes_per_group = rndup((nbinodes + nbgroups - 1)/nbgroups,
+						(BLOCKSIZE/sizeof(inode)));
 	if (nbinodes_per_group < 16)
 		nbinodes_per_group = 16; //minimum number b'cos the first 10 are reserved
-	overhead_per_group = 3 /*sb,ibm,bbm*/
-			     + nbinodes_per_group *sizeof(inode)/BLOCKSIZE 
-			     + rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
-	free_blocks = nbblocks - overhead_per_group * nbgroups - 1 /*boot block */;
-	free_blocks_per_group = free_blocks/nbgroups;
-	if (free_blocks > free_blocks_per_group * nbgroups)
-		free_blocks_per_group++;
-	nbblocks_per_group = free_blocks_per_group + overhead_per_group;
-	if (nbblocks_per_group > BLOCKS_PER_GROUP) {
-		/* Can this happen ? */
-		nbblocks_per_group = BLOCKS_PER_GROUP;
-		free_blocks_per_group = nbblocks_per_group - overhead_per_group;
-	}
-	nbblocks = nbblocks_per_group * nbgroups + 1;
+
+	gd = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
+	itbl = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
+	overhead_per_group = 3 /*sb,ibm,bbm*/ + itbl + gd;
+	free_blocks = nbblocks - overhead_per_group*nbgroups - 1 /*boot block*/;
+	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
 
 	if(!(fs = (filesystem*)calloc(nbblocks, BLOCKSIZE)))
 		error_msg_and_die("not enough memory for filesystem");
@@ -1679,7 +1674,7 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	fs->sb.s_inodes_count = nbinodes_per_group * nbgroups;
 	fs->sb.s_blocks_count = nbblocks;
 	fs->sb.s_r_blocks_count = nbresrvd;
-	fs->sb.s_free_blocks_count = free_blocks_per_group*nbgroups;
+	fs->sb.s_free_blocks_count = free_blocks;
 	fs->sb.s_free_inodes_count = fs->sb.s_inodes_count - EXT2_FIRST_INO + 1;
 	fs->sb.s_first_data_block = (BLOCKSIZE == 1024);
 	fs->sb.s_log_block_size = BLOCKSIZE >> 11;
@@ -1690,15 +1685,23 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	fs->sb.s_magic = EXT2_MAGIC_NUMBER;
 
 	// set up groupdescriptors
-	gd = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
-	itbl = nbinodes_per_group*sizeof(inode)/BLOCKSIZE;
 	for(i = 0,bbmpos=2+gd,ibmpos=3+gd,itblpos =4+gd;
 		i<nbgroups;
 		i++, bbmpos += nbblocks_per_group,ibmpos += nbblocks_per_group, 
 		itblpos += nbblocks_per_group)  {
 		
-		fs->gd[i].bg_free_blocks_count = free_blocks_per_group;
-		fs->gd[i].bg_free_inodes_count = nbinodes_per_group;
+		if(free_blocks > free_blocks_per_group) {
+			fs->gd[i].bg_free_blocks_count = free_blocks_per_group;
+			free_blocks -= free_blocks_per_group;
+		} else {
+			fs->gd[i].bg_free_blocks_count = free_blocks;
+			free_blocks = 0; // this is the last block group
+		}
+		if(i)
+			fs->gd[i].bg_free_inodes_count = nbinodes_per_group;
+		else
+			fs->gd[i].bg_free_inodes_count = nbinodes_per_group -
+							EXT2_FIRST_INO + 2;
 		fs->gd[i].bg_used_dirs_count = 0;
 		fs->gd[i].bg_block_bitmap = bbmpos;
 		fs->gd[i].bg_inode_bitmap = ibmpos;
@@ -1710,14 +1713,13 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 	for(i = 0; i<nbgroups;i++) {
 
 		/* Block bitmap */
-		j=fs->sb.s_inodes_per_group;
-		//printf("j: %d\n",j);
 		bbm = get_blk(fs,fs->gd[i].bg_block_bitmap);	
-		//non-filesystem blocks.*TODO* check the +1
-		for(j=fs->sb.s_blocks_per_group + 1; j <= BLOCKSIZE * 8; j++)
+		//non-filesystem blocks
+		for(j = fs->gd[i].bg_free_blocks_count
+		        + overhead_per_group + 1; j <= BLOCKSIZE * 8; j++)
 			allocate(bbm, j); 
 		//system blocks
-		for(j = 1; j <= 3+gd+itbl; j++)
+		for(j = 1; j <= overhead_per_group; j++)
 			allocate(bbm, j); 
 		
 		/* Inode bitmap */
@@ -1726,18 +1728,15 @@ static filesystem * init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes)
 		for(j = fs->sb.s_inodes_per_group+1; j <= BLOCKSIZE * 8; j++)
 			allocate(ibm, j);
 		//system inodes
-		for(j = 1; j < EXT2_FIRST_INO; j++)
-			allocate(ibm, j);
+		if(i == 0)
+			for(j = 1; j < EXT2_FIRST_INO; j++)
+				allocate(ibm, j);
 	}
 
-	/* We have groups now. Add the root filesystem in group 0  */
-	/* Also allocate the system inodes in group 0 and update   */
-	/* directory count and inode count for group 0             */
-	ibm = get_blk(fs,fs->gd[0].bg_inode_bitmap);
-	for(j = 1; j < EXT2_FIRST_INO; j++) {
-		allocate(ibm, j);
-		fs->gd[0].bg_free_inodes_count--;
-	}
+	// make root inode and directory
+	/* We have groups now. Add the root filesystem in group 0 */
+	/* Also increment the directory count for group 0 */
+	fs->gd[0].bg_free_inodes_count--;
 	fs->gd[0].bg_used_dirs_count = 1;
 	itab0 = (inode *)get_blk(fs,fs->gd[0].bg_inode_table);
 	itab0[EXT2_ROOT_INO-1].i_mode = FM_IFDIR | FM_IRWXU | FM_IRWXG | FM_IRWXO; 
