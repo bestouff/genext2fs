@@ -558,16 +558,7 @@ vperror_msg(const char *s, va_list p)
 		s = ": ";
 	fprintf(stderr, "%s%s\n", s, strerror(err));
 }
-#if 0
-static void
-perror_msg(const char *s, ...)
-{
-	va_list p;
-	va_start(p, s);
-	vperror_msg(s, p);
-	va_end(p);
-}
-#endif
+
 static void
 perror_msg_and_die(const char *s, ...)
 {
