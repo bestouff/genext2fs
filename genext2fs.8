@@ -25,10 +25,6 @@ genext2fs \- ext2 filesystem generator for embedded systems
 as a normal (non-root) user. It doesn't require you to mount
 the image file to copy files on it. It doesn't even require
 you to be the superuser to make device nodes.
-.SH WARNING
-\fBgenext2fs\fP has been designed for embedded
-systems. As such, it will generate a filesystem for single-user
-usage: all files/directories/etc... will belong to UID/GID 0
 .SH OPTIONS
 .TP
 .BI -x \ image
@@ -50,7 +46,7 @@ Size in blocks
 Number of inodes
 .TP
 .BI -r \ reserved
-Number of reserved blocks
+Number of reserved blocks. Pass 0 to omit lost+found.
 .TP
 .BI -g \ path
 Generate a block map file for this path
@@ -102,20 +98,21 @@ This example builds a filesystem from all the files in
 An example device file follows:
 
 .EX
- #<name>		<type>	<mode>	<uid>	<gid>	<major>	<minor>	<start>	<inc>	<count>
- /dev		d	755	0	0	-	-	-	-	-
- /dev/mem	c	640	0	0	1	1	0	0	-
- /dev/tty	c	666	0	0	5	0	0	0	-
- /dev/tty	c	666	0	0	4	0	0	1	6
- /dev/loop	b	640	0	0	7	0	0	1	2
- /dev/hda	b	640	0	0	3	0	0	0	-
- /dev/hda	b	640	0	0	3	1	1	1	16
- /dev/log	s	666	0	0	-	-	-	-	-
+# name	type mode uid gid major minor start inc count
+
+/dev		d	755	0	0	-	-	-	-	-
+/dev/mem	c	640	0	0	1	1	0	0	-
+/dev/tty	c	666	0	0	5	0	0	0	-
+/dev/tty	c	666	0	0	4	0	0	1	6
+/dev/loop	b	640	0	0	7	0	0	1	2
+/dev/hda	b	640	0	0	3	0	0	0	-
+/dev/hda	b	640	0	0	3	1	1	1	16
+/dev/log	s	666	0	0	-	-	-	-	-
 .EE
 
 This device table creates the /dev directory, a character device
 node /dev/mem (major 1, minor 1), it also creates /dev/tty, 
-/dev/tty[0-5], /dev/loop[0-1], /dev/hda, /dev/hda0 to /dev/hda15 and /dev/log socket.
+/dev/tty[0-5], /dev/loop[0-1], /dev/hda, /dev/hda1 to /dev/hda15 and /dev/log socket.
 
 .SH SEE ALSO
 .BR mkfs (8),
