@@ -310,6 +310,36 @@ getline(char **lineptr, size_t *n, FILE *stream)
 }
 #endif
 
+//
+//  Support parsing of SI-style suffixes on integer option arguments,
+// such as "[Kk]i", "[Mm]i" and "[Gg]i", which correspond to powers
+// of 2.  For the time being, do *not* support simple suffixes like
+// "[Kk]", "[Mm]" or "[Gg]".
+//
+
+unsigned long int
+ktoi(const char *nptr)
+{
+        unsigned long int res = 0 ;
+
+        char    *suffixptr ;
+        char    **endptr ;
+
+        endptr = &suffixptr ;
+
+        res = strtoul(nptr, endptr, 0) ;
+
+        if ((*suffixptr) != '\0') {
+		if (!strcmp(suffixptr,"ki") || !strcmp(suffixptr,"Ki"))
+			res <<= 10 ;
+		else if (!strcmp(suffixptr,"mi") || !strcmp(suffixptr,"Mi"))
+			res <<= 20 ;
+		else if (!strcmp(suffixptr,"gi") || !strcmp(suffixptr,"Gi"))
+			res <<= 30 ;
+	}
+	return res ;
+}
+
 // endianness swap
 
 static inline uint16
@@ -2310,9 +2340,9 @@ extern int optind, opterr, optopt;
 int
 main(int argc, char **argv)
 {
-	int nbblocks = -1;
-	int nbinodes = -1;
-	int nbresrvd = -1;
+	unsigned long int nbblocks = -1;
+	unsigned long int nbinodes = -1;
+	unsigned long int nbresrvd = -1;
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
 	uint32 fs_timestamp = -1;
@@ -2371,13 +2401,13 @@ main(int argc, char **argv)
 				dopt[didx++] = optarg;
 				break;
 			case 'b':
-				nbblocks = atoi(optarg);
+				nbblocks = ktoi(optarg);
 				break;
 			case 'i':
-				nbinodes = atoi(optarg);
+				nbinodes = ktoi(optarg);
 				break;
 			case 'r':
-				nbresrvd = atoi(optarg);
+				nbresrvd = ktoi(optarg);
 				break;
 			case 'g':
 				gopt[gidx++] = optarg;
