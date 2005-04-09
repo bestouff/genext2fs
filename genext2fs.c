@@ -231,32 +231,29 @@ typedef unsigned int uint32;
 // glibc ...
 
 #ifdef __GNUC__
-#if !defined(__sparc__) && !defined(__APPLE__)
+#if (defined(__sun) && defined(__SVR4)) || defined __APPLE__
+#define SCANF_PREFIX "511"
+#define SCANF_STRING(s) (s = malloc(512))
+#ifdef __APPLE__
+#define GETCWD_SIZE 0
+#else
+#define GETCWD_SIZE 4096
+#define SNPRINTF_STORAGE_CLASS inline
+#endif // defined __APPLE__
+#else
 #define SCANF_PREFIX "a"
 #define SCANF_STRING(s) (&s)
 #define GETCWD_SIZE 0
-#else
-#define SCANF_PREFIX "511"
-#define SCANF_STRING(s) (s = malloc(512))
-#define GETCWD_SIZE 4096
-#ifndef __APPLE__
-inline int
-snprintf(char *str, size_t n, const char *fmt, ...)
-{
-	int ret;
-	va_list ap;
-	va_start(ap, fmt);
-	ret = vsprintf(str, fmt, ap);
-	va_end(ap);
-	return ret;
-}
-#endif // ndef __APPLE__
-#endif
+#endif // (defined(__sun) && defined(__SVR4)) || defined __APPLE__
 #else
 #define SCANF_PREFIX "511"
 #define SCANF_STRING(s) (s = malloc(512))
 #define GETCWD_SIZE -1
-static inline int
+#define SNPRINTF_STORAGE_CLASS static inline
+#endif // defined __GNUC__
+
+#ifdef SNPRINTF_STORAGE_CLASS
+SNPRINTF_STORAGE_CLASS int
 snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
@@ -266,7 +263,7 @@ snprintf(char *str, size_t n, const char *fmt, ...)
 	va_end(ap);
 	return ret;
 }
-#endif
+#endif // defined SNPRINTF_STORAGE_CLASS
 
 #if defined(__APPLE__) && defined(__GNUC__)
 // getline() replacement for Darwin, might work on other systems
