@@ -51,27 +51,6 @@
 // 			along with -q, -P, -U
 
 
-// `genext2fs' is a mean to generate an ext2 filesystem
-// as a normal (non-root) user. It doesn't require you to mount
-// the image file to copy files on it. It doesn't even require
-// you to be the superuser to make device nodes.
-//
-// Example usage (using both short and long options):
-//
-// # genext2fs -b 1440 -d srcdir /dev/fd0
-// # genext2fs --size-in-blocks=1440 --source-directory=srcdir /dev/fd0
-//
-// All files in the srcdir directory will be written to /dev/fd0 as
-// a new ext2 filesystem image. You can then mount the floppy as
-// usual.
-//
-// # genext2fs -b 1024 -d builddir -D device_table.txt flashdisk.img
-//
-// This one would build a filesystem from all the files in builddir,
-// then would read the device_table.txt file and make apropriate nodes.
-// The format for the device table file is covered in detail in the sample
-// device_table.txt file provided with the genext2fs source.
-
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
