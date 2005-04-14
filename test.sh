@@ -49,14 +49,16 @@ ftest () {
 	gen_cleanup
 }
 
-# NB: to regenerate these values, always use test-mount.sh
+# NB: to regenerate these values, always use test-mount.sh, that is,
+# replace the following lines with the output of
+# sudo sh test-mount.sh|grep test
 
-dtest 0 4096 f956d2bc3b31bcd8291e160858295f29
-dtest 0 8193 d1e5ab6b04f0680a0978185c12c70255
-dtest 0 8194 4855a55d0cbdc44584634df49ebd5711
-dtest 1 4096 be5e36047e1c873295e9dc1af01ec563
-dtest 12288 4096 809909d899395e1793368edf2a2f41bc
-dtest 274432 4096 32b103730267d445ff497b18bd359826
-dtest 8388608 9000 e0e5ea15bced10ab486d8135584b5d8e
-dtest 16777216 20000 fdf636eb905ab4dc1bf76dce5ac5d209
-ftest device_table.txt 4096 b621bb4217cc047a6d7df75234e8f66a
+dtest 0 4096 1072592267c1bd31462ed6c614fcbcd7
+dtest 0 8193 16380ac3b418ec809cb2c072ba4a41ba
+dtest 0 8194 5656e8f429b88d3dfda90b3b9b4fa05d
+dtest 1 4096 01d8115d8fe38e92953a66af22f7c4fe
+dtest 12288 4096 17baa803f86767922c7f3409c11c73d5
+dtest 274432 4096 f5df115a66778d2ffe47917a7e6404e4
+dtest 8388608 9000 55739b414c858f19e7db72f227c0dbb4
+dtest 16777216 20000 4cebadd02a2f10c9df4db807c8edaadf
+ftest device_table.txt 4096 3524efcf5d005a6f0b1fa5c12675f5c3
