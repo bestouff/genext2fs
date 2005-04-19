@@ -286,34 +286,34 @@ getline(char **lineptr, size_t *n, FILE *stream)
 }
 #endif
 
-//
-//  Support parsing of SI-style suffixes on integer option arguments,
-// such as "[Kk]i", "[Mm]i" and "[Gg]i", which correspond to powers
-// of 2.  For the time being, do *not* support simple suffixes like
-// "[Kk]", "[Mm]" or "[Gg]".
-//
+// Convert a numerical string to a float, and multiply the result by an
+// SI-style multiplier if provided; supported multipliers are Ki, Mi, Gi, k, M
+// and G.
 
-unsigned long int
-ktoi(const char *nptr)
+float
+SI_atof(const char *nptr)
 {
-        unsigned long int res = 0 ;
+	float f = 0;
+	float m = 1;
+	char *suffixptr;
 
-        char    *suffixptr ;
-        char    **endptr ;
+	f = strtof(nptr, &suffixptr);
 
-        endptr = &suffixptr ;
-
-        res = strtoul(nptr, endptr, 0) ;
-
-        if ((*suffixptr) != '\0') {
-		if (!strcmp(suffixptr,"ki") || !strcmp(suffixptr,"Ki"))
-			res <<= 10 ;
-		else if (!strcmp(suffixptr,"mi") || !strcmp(suffixptr,"Mi"))
-			res <<= 20 ;
-		else if (!strcmp(suffixptr,"gi") || !strcmp(suffixptr,"Gi"))
-			res <<= 30 ;
+	if (*suffixptr) {
+		if (!strcmp(suffixptr, "Ki"))
+			m = 1 << 10;
+		else if (!strcmp(suffixptr, "Mi"))
+			m = 1 << 20;
+		else if (!strcmp(suffixptr, "Gi"))
+			m = 1 << 30;
+		else if (!strcmp(suffixptr, "k"))
+			m = 1000;
+		else if (!strcmp(suffixptr, "M"))
+			m = 1000 * 1000;
+		else if (!strcmp(suffixptr, "G"))
+			m = 1000 * 1000 * 1000;
 	}
-	return res ;
+	return f * m;
 }
 
 // endianness swap
@@ -1799,6 +1799,8 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	uint8 *bbm,*ibm;
 	inode *itab0;
 	
+	if(nbresrvd < 0)
+		error_msg_and_die("reserved blocks value is invalid");
 	if(nbblocks < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
 
@@ -2316,9 +2318,9 @@ extern int optind, opterr, optopt;
 int
 main(int argc, char **argv)
 {
-	unsigned long int nbblocks = -1;
-	unsigned long int nbinodes = -1;
-	unsigned long int nbresrvd = -1;
+	int nbblocks = -1;
+	int nbinodes = -1;
+	int nbresrvd = -1;
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
 	uint32 fs_timestamp = -1;
@@ -2377,13 +2379,13 @@ main(int argc, char **argv)
 				dopt[didx++] = optarg;
 				break;
 			case 'b':
-				nbblocks = ktoi(optarg);
+				nbblocks = SI_atof(optarg);
 				break;
 			case 'i':
-				nbinodes = ktoi(optarg);
+				nbinodes = SI_atof(optarg);
 				break;
 			case 'r':
-				nbresrvd = ktoi(optarg);
+				nbresrvd = SI_atof(optarg);
 				break;
 			case 'g':
 				gopt[gidx++] = optarg;
