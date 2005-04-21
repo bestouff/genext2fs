@@ -77,7 +77,6 @@ struct stats {
 
 #define BLOCKSIZE         1024
 #define BLOCKS_PER_GROUP  8192
-#define BYTES_PER_INODE   (8*BLOCKSIZE)
 /* Percentage of blocks that are reserved.*/
 #define RESERVED_BLOCKS       5/100
 #define MAX_RESERVED_BLOCKS  25/100
@@ -1801,8 +1800,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	
 	if(nbresrvd < 0)
 		error_msg_and_die("reserved blocks value is invalid");
-	if(nbblocks < 16) // totally arbitrary
-		error_msg_and_die("too small filesystem");
+	if(nbinodes < 12)
+		error_msg_and_die("too few inodes");
+	if(nbblocks < 8)
+		error_msg_and_die("too few blocks");
 
 	/* nbblocks is the total number of blocks in the filesystem. First
 	 * calculate the size of each group assuming each group has
@@ -2293,7 +2294,8 @@ showhelp(void)
 	"  -d, --root <directory>\n"
 	"  -D, --devtable <file>\n"
 	"  -b, --size-in-blocks <blocks>\n"
-	"  -i, --number-of-inodes <number of inodes>\n"
+	"  -i, --bytes-per-inode <bytes per inode>\n"
+	"  -I, --number-of-inodes <number of inodes>\n"
 	"  -r, --reserved-blocks <number of reserved blocks>\n"
 	"  -g, --block-map <path>     Generate a block map file for this path.\n"
 	"  -e, --fill-value <value>   Fill unallocated blocks with value.\n"
@@ -2323,6 +2325,7 @@ main(int argc, char **argv)
 	int nbresrvd = -1;
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
+	float bytes_per_inode = -1;
 	uint32 fs_timestamp = -1;
 	char * fsout = "-";
 	char * fsin = 0;
@@ -2354,7 +2357,8 @@ main(int argc, char **argv)
 	  { "root",		required_argument,	NULL, 'd' },
 	  { "devtable",		required_argument,	NULL, 'D' },
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
-	  { "number-of-inodes",	required_argument,	NULL, 'i' },
+	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
+	  { "number-of-inodes",	required_argument,	NULL, 'I' },
 	  { "reserved-blocks",	required_argument,	NULL, 'r' },
 	  { "block-map",	required_argument,	NULL, 'g' },
 	  { "fill-value",	required_argument,	NULL, 'e' },
@@ -2368,7 +2372,7 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:i:r:g:e:zfqUPhv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:I:i:r:g:e:zfqUPhv", longopts, NULL)) != EOF) {
 		switch(c)
 		{
 			case 'x':
@@ -2382,6 +2386,9 @@ main(int argc, char **argv)
 				nbblocks = SI_atof(optarg);
 				break;
 			case 'i':
+				bytes_per_inode = SI_atof(optarg);
+				break;
+			case 'I':
 				nbinodes = SI_atof(optarg);
 				break;
 			case 'r':
@@ -2477,24 +2484,27 @@ main(int argc, char **argv)
 			if(pdest)
 				*pdest = ':';
 		}
-	
-		tmp_nbinodes = stats.ninodes + EXT2_FIRST_INO + 1;
+
 		tmp_nbblocks = stats.nblocks; // FIXME: should add space taken by inodes too
-	
 		if(tmp_nbblocks > nbblocks)
 		{
 			fprintf(stderr, "number of blocks too low, increasing to %d\n",tmp_nbblocks);
 			nbblocks = tmp_nbblocks;
 		}
+
+		if(bytes_per_inode != -1) {
+			tmp_nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
+			if(tmp_nbinodes > nbinodes)
+				nbinodes = tmp_nbinodes;
+		}
+
+		tmp_nbinodes = stats.ninodes + EXT2_FIRST_INO + 1;
 		if(tmp_nbinodes > nbinodes)
 		{
 			fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
 			nbinodes = tmp_nbinodes;
 		}
-		if(nbblocks == -1)
-			error_msg_and_die("filesystem size unspecified");
-		if(nbinodes == -1)
-			nbinodes = nbblocks * BLOCKSIZE / rndup(BYTES_PER_INODE, BLOCKSIZE);
+
 		if(nbresrvd == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
 		if(fs_timestamp == -1)
