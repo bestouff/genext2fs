@@ -2452,6 +2452,7 @@ main(int argc, char **argv)
 	{
 		stats.ninodes = 0;
 		stats.nblocks = 0;
+#if 0
 		for(i = 0; i < didx; i++)
 		{
 			struct stat st;
@@ -2504,7 +2505,7 @@ main(int argc, char **argv)
 			fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
 			nbinodes = tmp_nbinodes;
 		}
-
+#endif
 		if(nbresrvd == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
 		if(fs_timestamp == -1)
