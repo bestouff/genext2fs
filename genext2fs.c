@@ -2505,6 +2505,13 @@ main(int argc, char **argv)
 			fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
 			nbinodes = tmp_nbinodes;
 		}
+#else
+		if(nbinodes == -1) {
+			if(bytes_per_inode == -1)
+				nbinodes = nbblocks / 8;
+			else
+				nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
+		}
 #endif
 		if(nbresrvd == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
