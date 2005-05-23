@@ -4,14 +4,16 @@ This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
 - support for SI-style suffixes for some option values.
 - --faketime option
 - more capable device_table.txt format
-- hardlinks support
-- sockets support
+- hardlink support
+- socket support
 - big filesystems (>8MB) support
-- Solaris 2.x and MacOS X support
+- Solaris 2.x and Mac OS X support
 
 There are also various bugfixes and an up-to-date manpage.
-Please note that some options have changed, to try to be compatible
-with mkfs.jffs2 and mkfs.ext2.
+
+PLEASE NOTE that some options have changed, to try to be consistent
+with mkfs.jffs2 and mkfs.ext2: -D replaces the old -f, and -I replaces
+the old -i. See the man page for more information.
 
 Please test and report bugs to genext2fs-devel@lists.sourceforge.net
 
