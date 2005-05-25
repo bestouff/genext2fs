@@ -2286,6 +2286,12 @@ dump_fs(filesystem *fs, FILE * fh, int swapit)
 }
 
 static void
+showversion(void)
+{
+	fprintf(stderr, "genext2fs " VERSION "\n");
+}
+
+static void
 showhelp(void)
 {
 	fprintf(stderr, "Usage: %s [options] image\n"
@@ -2305,6 +2311,7 @@ showhelp(void)
 	"  -U, --squash-uids          Squash owners making all files be owned by root.\n"
 	"  -P, --squash-perms         Squash permissions on all files.\n"
 	"  -h, --help\n"
+	"  -V, --version\n"
 	"  -v, --verbose\n\n"
 	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
 }
@@ -2368,11 +2375,12 @@ main(int argc, char **argv)
 	  { "squash-uids",	no_argument,		NULL, 'U' },
 	  { "squash-perms",	no_argument,		NULL, 'P' },
 	  { "help",		no_argument,		NULL, 'h' },
+	  { "version",		no_argument,		NULL, 'V' },
 	  { "verbose",		no_argument,		NULL, 'v' },
 	  { 0, 0, 0, 0}
 	} ;
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:I:i:r:g:e:zfqUPhv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:I:i:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 		switch(c)
 		{
 			case 'x':
@@ -2418,6 +2426,9 @@ main(int argc, char **argv)
 				break;
 			case 'h':
 				showhelp();
+				exit(0);
+			case 'V':
+				showversion();
 				exit(0);
 			case 'v':
 				verbose = 1;
