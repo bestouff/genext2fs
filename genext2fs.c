@@ -2288,7 +2288,7 @@ dump_fs(filesystem *fs, FILE * fh, int swapit)
 static void
 showversion(void)
 {
-	fprintf(stderr, "genext2fs " VERSION "\n");
+	printf("genext2fs " VERSION "\n");
 }
 
 static void
@@ -2432,6 +2432,7 @@ main(int argc, char **argv)
 				exit(0);
 			case 'v':
 				verbose = 1;
+				showversion();
 				break;
 			default:
 				exit(1);
