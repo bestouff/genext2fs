@@ -1552,7 +1552,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, fs_timestamp, stats);
 					chdir("..");
 					break;
 				default:
@@ -2380,7 +2380,7 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:I:i:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:i:I:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 		switch(c)
 		{
 			case 'x':
