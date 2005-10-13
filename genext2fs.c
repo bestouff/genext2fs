@@ -2023,6 +2023,7 @@ write_blocks(filesystem *fs, uint32 nod, FILE* f)
 	}
 }
 
+#if 0
 // hexdumps blocks to a FILE*
 static void
 hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
@@ -2058,6 +2059,7 @@ hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 		fsize -= BLOCKSIZE;
 	}
 }
+#endif
 
 // print block/char device minor and major
 static void
@@ -2330,8 +2332,10 @@ main(int argc, char **argv)
 	int nbblocks = -1;
 	int nbinodes = -1;
 	int nbresrvd = -1;
+#if 0
 	int tmp_nbblocks = -1;
 	int tmp_nbinodes = -1;
+#endif
 	float bytes_per_inode = -1;
 	uint32 fs_timestamp = -1;
 	char * fsout = "-";
