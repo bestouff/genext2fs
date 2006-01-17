@@ -851,8 +851,8 @@ print_bm(block b, uint32 max)
 }
 
 // initalize a blockwalker (iterator for blocks list)
-static void
-init_bw(filesystem *fs, uint32 nod, blockwalker *bw)
+static inline void
+init_bw(blockwalker *bw)
 {
 	bw->bnum = 0;
 	bw->bpdir = EXT2_INIT_BLOCK;
@@ -1104,10 +1104,10 @@ extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 	int create = amount;
 	blockwalker bw, lbw;
 	uint32 bk;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	if(amount < 0)
 	{
-		int i;
+		uint32 i;
 		for(i = 0; i < get_nod(fs, nod)->i_blocks / INOBLK + amount; i++)
 			walk_bw(fs, nod, &bw, 0, 0);
 		while(walk_bw(fs, nod, &bw, &create, 0) != WALK_END)
@@ -1161,7 +1161,7 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	reclen = sizeof(directory) + rndup(nlen, 4);
 	if(reclen > BLOCKSIZE)
 		error_msg_and_die("bad name '%s' (too long)", name);
-	init_bw(fs, dnod, &bw);
+	init_bw(&bw);
 	while((bk = walk_bw(fs, dnod, &bw, 0, 0)) != WALK_END) // for all blocks in dir
 	{
 		b = get_blk(fs, bk);
@@ -1216,7 +1216,7 @@ find_dir(filesystem *fs, uint32 nod, const char * name)
 	blockwalker bw;
 	uint32 bk;
 	int nlen = strlen(name);
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 	{
 		directory *d;
@@ -1257,7 +1257,7 @@ find_path(filesystem *fs, uint32 nod, const char * name)
 
 // create a simple inode
 static uint32
-mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
+mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint16 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
 {
 	uint32 nod;
 	inode *node;
@@ -1398,7 +1398,7 @@ get_mode(struct stat *st)
 */
 
 static void
-add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp, struct stats *stats)
 {
 	unsigned long mode, uid, gid, major, minor;
 	unsigned long start, increment, count;
@@ -1626,10 +1626,11 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 static void
 swap_goodblocks(filesystem *fs, inode *nod)
 {
-	int i,j,done=0;
+	uint32 i,j;
+	int done=0;
 	uint32 *b,*b2;
 
-	int nblk = nod->i_blocks / INOBLK;
+	uint32 nblk = nod->i_blocks / INOBLK;
 	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
 		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
 			nod->i_block[i] = swab32(nod->i_block[i]);
@@ -1682,10 +1683,11 @@ swap_goodblocks(filesystem *fs, inode *nod)
 static void
 swap_badblocks(filesystem *fs, inode *nod)
 {
-	int i,j,done=0;
+	uint32 i,j;
+	int done=0;
 	uint32 *b,*b2;
 
-	int nblk = nod->i_blocks / INOBLK;
+	uint32 nblk = nod->i_blocks / INOBLK;
 	if((nod->i_size && !nblk) || ((nod->i_mode & FM_IFBLK) == FM_IFBLK) || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
 		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
 			nod->i_block[i] = swab32(nod->i_block[i]);
@@ -1727,7 +1729,7 @@ swap_badblocks(filesystem *fs, inode *nod)
 static void
 swap_goodfs(filesystem *fs)
 {
-	int i;
+	uint32 i;
 	for(i = 1; i < fs->sb.s_inodes_count; i++)
 	{
 		inode *nod = get_nod(fs, i);
@@ -1735,7 +1737,7 @@ swap_goodfs(filesystem *fs)
 		{
 			blockwalker bw;
 			uint32 bk;
-			init_bw(fs, i, &bw);
+			init_bw(&bw);
 			while((bk = walk_bw(fs, i, &bw, 0, 0)) != WALK_END)
 			{
 				directory *d;
@@ -1756,7 +1758,7 @@ swap_goodfs(filesystem *fs)
 static void
 swap_badfs(filesystem *fs)
 {
-	int i;
+	uint32 i;
 	swap_sb(&fs->sb);
 	for(i=0;i<GRP_NBGROUPS(fs);i++)
 		swap_gd(&(fs->gd[i]));
@@ -1769,7 +1771,7 @@ swap_badfs(filesystem *fs)
 		{
 			blockwalker bw;
 			uint32 bk;
-			init_bw(fs, i, &bw);
+			init_bw(&bw);
 			while((bk = walk_bw(fs, i, &bw, 0, 0)) != WALK_END)
 			{
 				directory *d;
@@ -1786,7 +1788,7 @@ swap_badfs(filesystem *fs)
 static filesystem *
 init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp)
 {
-	int i;
+	uint32 i;
 	filesystem *fs;
 	directory *d;
 	uint8 * b;
@@ -1794,7 +1796,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	uint32 nbgroups,nbinodes_per_group,overhead_per_group,free_blocks,
 		free_blocks_per_group,nbblocks_per_group;
 	uint32 gd,itbl,ibmpos,bbmpos,itblpos;
-	int j;
+	uint32 j;
 	uint8 *bbm,*ibm;
 	inode *itab0;
 	
@@ -1956,7 +1958,7 @@ load_fs(FILE * fh, int swapit)
 {
 	size_t fssize;
 	filesystem *fs;
-	if((fseek(fh, 0, SEEK_END) < 0) || ((fssize = ftell(fh)) < 0))
+	if((fseek(fh, 0, SEEK_END) < 0) || ((ssize_t)(fssize = ftell(fh)) == -1))
 		perror_msg_and_die("input filesystem image");
 	rewind(fh);
 	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
@@ -1985,7 +1987,7 @@ flist_blocks(filesystem *fs, uint32 nod, FILE *fh)
 {
 	blockwalker bw;
 	uint32 bk;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 		fprintf(fh, " %d", bk);
 	fprintf(fh, "\n");
@@ -1998,7 +2000,7 @@ list_blocks(filesystem *fs, uint32 nod)
 	int bn = 0;
 	blockwalker bw;
 	uint32 bk;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	printf("blocks in inode %d:", nod);
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 		printf(" %d", bk), bn++;
@@ -2012,7 +2014,7 @@ write_blocks(filesystem *fs, uint32 nod, FILE* f)
 	blockwalker bw;
 	uint32 bk;
 	int32 fsize = get_nod(fs, nod)->i_size;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 	{
 		if(fsize <= 0)
@@ -2032,7 +2034,7 @@ hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
 	uint32 bk;
 	uint8 *b;
 	int32 fsize = get_nod(fs, nod)->i_size;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	printf("block: offset: data:                                ascii:\n");
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 	{
@@ -2077,7 +2079,7 @@ print_dir(filesystem *fs, uint32 nod)
 {
 	blockwalker bw;
 	uint32 bk;
-	init_bw(fs, nod, &bw);
+	init_bw(&bw);
 	printf("directory for inode %d:\n", nod);
 	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
 	{
@@ -2241,7 +2243,7 @@ print_inode(filesystem *fs, uint32 nod)
 static void
 print_fs(filesystem *fs)
 {
-	int i;
+	uint32 i;
 	uint8 *ibm;
 
 	printf("%d blocks (%d free, %d reserved), first data block: %d\n",
@@ -2277,7 +2279,7 @@ print_fs(filesystem *fs)
 static void
 dump_fs(filesystem *fs, FILE * fh, int swapit)
 {
-	int nbblocks = fs->sb.s_blocks_count;
+	uint32 nbblocks = fs->sb.s_blocks_count;
 	fs->sb.s_reserved[200] = 0;
 	if(swapit)
 		swap_goodfs(fs);
@@ -2337,7 +2339,7 @@ main(int argc, char **argv)
 	int tmp_nbinodes = -1;
 #endif
 	float bytes_per_inode = -1;
-	uint32 fs_timestamp = -1;
+	int fs_timestamp = -1;
 	char * fsout = "-";
 	char * fsin = 0;
 	char * dopt[MAX_DOPT];
@@ -2482,7 +2484,7 @@ main(int argc, char **argv)
 			{
 				case S_IFREG:
 					fh = xfopen(dopt[i], "r");
-					add2fs_from_file(fs, nod, fh, squash_uids, squash_perms, 0, &stats);
+					add2fs_from_file(fs, nod, fh, 0, &stats);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -2552,7 +2554,7 @@ main(int argc, char **argv)
 		{
 			case S_IFREG:
 				fh = xfopen(dopt[i], "r");
-				add2fs_from_file(fs, nod, fh, squash_uids, squash_perms, fs_timestamp, NULL );
+				add2fs_from_file(fs, nod, fh, fs_timestamp, NULL );
 				fclose(fh);
 				break;
 			case S_IFDIR:
@@ -2569,10 +2571,12 @@ main(int argc, char **argv)
 				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
 		}
 	}
-	if(emptyval)
-		for(i = 1; i < fs->sb.s_blocks_count; i++)
-			if(!allocated(GRP_GET_BLOCK_BITMAP(fs,i),GRP_BBM_OFFSET(fs,i)))
-				memset(get_blk(fs, i), emptyval, BLOCKSIZE);
+	if(emptyval) {
+		uint32 b;
+		for(b = 1; b < fs->sb.s_blocks_count; b++)
+			if(!allocated(GRP_GET_BLOCK_BITMAP(fs,b),GRP_BBM_OFFSET(fs,b)))
+				memset(get_blk(fs, b), emptyval, BLOCKSIZE);
+	}
 	if(verbose)
 		print_fs(fs);
 	for(i = 0; i < gidx; i++)
