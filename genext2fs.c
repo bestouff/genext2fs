@@ -157,7 +157,9 @@ struct stats {
 /* Defines for accessing group details */
 
 // Number of groups in the filesystem
-#define GRP_NBGROUPS(fs) (((fs)->sb.s_blocks_count+(fs)->sb.s_blocks_per_group-1)/(fs)->sb.s_blocks_per_group)
+#define GRP_NBGROUPS(fs) \
+	(((fs)->sb.s_blocks_count - fs->sb.s_first_data_block + \
+	  (fs)->sb.s_blocks_per_group - 1) / (fs)->sb.s_blocks_per_group)
 
 // Get group block bitmap (bbm) given the group number
 #define GRP_GET_GROUP_BBM(fs,grp) ( get_blk((fs),(fs)->gd[(grp)].bg_block_bitmap) )
@@ -773,8 +775,7 @@ alloc_blk(filesystem *fs, uint32 nod)
 	uint32 grp,nbgroups;
 
 	grp = nod/fs->sb.s_inodes_per_group;
-	nbgroups = ( fs->sb.s_blocks_count - fs->sb.s_first_data_block + fs->sb.s_blocks_per_group -1 ) / 
-					fs->sb.s_blocks_per_group;
+	nbgroups = GRP_NBGROUPS(fs);
 	if(!(bk = allocate(get_blk(fs,fs->gd[grp].bg_block_bitmap), 0))) {
 		for(grp=0;grp<nbgroups && !bk;grp++)
 			bk=allocate(get_blk(fs,fs->gd[grp].bg_block_bitmap),0);
@@ -809,8 +810,7 @@ alloc_nod(filesystem *fs)
 	uint32 nod=0,best_group=0;
 	uint32 grp,nbgroups,avefreei;
 
-	nbgroups = ( fs->sb.s_blocks_count - fs->sb.s_first_data_block + fs->sb.s_blocks_per_group -1 ) / 
-					fs->sb.s_blocks_per_group;
+	nbgroups = GRP_NBGROUPS(fs);
 
 	/* Distribute inodes amongst all the blocks                           */
 	/* For every block group with more than average number of free inodes */
@@ -1792,7 +1792,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	filesystem *fs;
 	directory *d;
 	uint8 * b;
-	uint32 nod;
+	uint32 nod, first_block;
 	uint32 nbgroups,nbinodes_per_group,overhead_per_group,free_blocks,
 		free_blocks_per_group,nbblocks_per_group;
 	uint32 gd,itbl,ibmpos,bbmpos,itblpos;
@@ -1816,9 +1816,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	 * Then calculate the overhead blocks - inode table blocks, bitmap
 	 * blocks, group descriptor blocks etc. 
 	 */
-	
-	nbgroups = (nbblocks + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
-	nbblocks_per_group = rndup((nbblocks + nbgroups - 1)/nbgroups, 8);
+
+	first_block = (BLOCKSIZE == 1024);
+	nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
+	nbblocks_per_group = rndup((nbblocks - first_block + nbgroups - 1)/nbgroups, 8);
 	nbinodes_per_group = rndup((nbinodes + nbgroups - 1)/nbgroups,
 						(BLOCKSIZE/sizeof(inode)));
 	if (nbinodes_per_group < 16)
@@ -1839,7 +1840,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	fs->sb.s_r_blocks_count = nbresrvd;
 	fs->sb.s_free_blocks_count = free_blocks;
 	fs->sb.s_free_inodes_count = fs->sb.s_inodes_count - EXT2_FIRST_INO + 1;
-	fs->sb.s_first_data_block = (BLOCKSIZE == 1024);
+	fs->sb.s_first_data_block = first_block;
 	fs->sb.s_log_block_size = BLOCKSIZE >> 11;
 	fs->sb.s_log_frag_size = BLOCKSIZE >> 11;
 	fs->sb.s_blocks_per_group = nbblocks_per_group;
