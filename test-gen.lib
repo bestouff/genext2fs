@@ -12,7 +12,7 @@ dgen () {
 	rm -rf test
 	mkdir -p test
 	cd test
-	if [ x$size == x0 ]; then
+	if [ x$size = x0 ]; then
 		> file.$1
 	else
 		dd if=/dev/zero of=file.$1 bs=$size count=1 2>/dev/null

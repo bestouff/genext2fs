@@ -11,14 +11,14 @@
 
 set -e
 
-. test-gen.lib
+. ./test-gen.lib
 
 # md5cmp - Calculate MD5 digest and compare it to an expected value.
 # Usage: md5cmp expected-digest
 md5cmp () {
 	checksum=$1
 	md5=`calc_digest`
-	if [ $md5 == $checksum ] ; then
+	if [ x$md5 = x$checksum ] ; then
 		echo PASSED
 	else
 		echo FAILED

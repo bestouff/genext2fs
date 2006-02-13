@@ -6,7 +6,7 @@
 
 set -e
 
-. test-gen.lib
+. ./test-gen.lib
 
 test_cleanup () {
 	umount mnt 2>/dev/null || true
