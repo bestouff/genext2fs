@@ -51,22 +51,90 @@
 // 			along with -q, -P, -U
 
 
-#define _GNU_SOURCE
+#include <config.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <dirent.h>
-#include <libgen.h>
+
+#if HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
+
+#if HAVE_SYS_STAT_H
+# include <sys/stat.h>
+#endif
+
+#if STDC_HEADERS
+# include <stdlib.h>
+# include <stddef.h>
+#else
+# if HAVE_STDLIB_H
+#  include <stdlib.h>
+# endif
+# if HAVE_STDDEF_H
+#  include <stddef.h>
+# endif
+#endif
+
+#if HAVE_STRING_H
+# if !STDC_HEADERS && HAVE_MEMORY_H
+#  include <memory.h>
+# endif
+# include <string.h>
+#endif
+
+#if HAVE_STRINGS_H
+# include <strings.h>
+#endif
+
+#if HAVE_INTTYPES_H
+# include <inttypes.h>
+#else
+# if HAVE_STDINT_H
+#  include <stdint.h>
+# endif
+#endif
+
+#if HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+
+#if HAVE_DIRENT_H
+# include <dirent.h>
+# define NAMLEN(dirent) strlen((dirent)->d_name)
+#else
+# define dirent direct
+# define NAMLEN(dirent) (dirent)->d_namlen
+# if HAVE_SYS_NDIR_H
+#  include <sys/ndir.h>
+# endif
+# if HAVE_SYS_DIR_H
+#  include <sys/dir.h>
+# endif
+# if HAVE_NDIR_H
+#  include <ndir.h>
+# endif
+#endif
+
+#if HAVE_LIBGEN_H
+# include <libgen.h>
+#endif
+
 #include <stdarg.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <assert.h>
 #include <time.h>
 #include <ctype.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <getopt.h>
+
+#if HAVE_FCNTL_H
+# include <fcntl.h>
+#endif
+
+#if HAVE_GETOPT_H
+# include <getopt.h>
+#endif
+
+#if HAVE_LIMITS_H
+# include <limits.h>
+#endif
 
 struct stats {
 	unsigned long nblocks;
@@ -205,36 +273,21 @@ typedef unsigned int uint32;
 // overruns. the following macros use it if available or use a
 // hacky workaround
 // moreover it will define a snprintf() like a sprintf(), i.e.
-// without the buffer overrun checking,
-// and the correct getcwd() size argument for automatic allocation,
-// which of course is not the same on Solaris, old glibc and new
-// glibc ...
+// without the buffer overrun checking, to work around bugs in
+// older solaris. Note that this is still not very portable, in that
+// the return value cannot be trusted.
 
-#ifdef __GNUC__
-#if (defined(__sun) && defined(__SVR4)) || defined __APPLE__
-#define SCANF_PREFIX "511"
-#define SCANF_STRING(s) (s = malloc(512))
-#ifdef __APPLE__
-#define GETCWD_SIZE 0
+#if SCANF_CAN_MALLOC
+# define SCANF_PREFIX "a"
+# define SCANF_STRING(s) (&s)
 #else
-#define GETCWD_SIZE 4096
-#define SNPRINTF_STORAGE_CLASS inline
-#endif // defined __APPLE__
-#else
-#define SCANF_PREFIX "a"
-#define SCANF_STRING(s) (&s)
-#define GETCWD_SIZE 0
-#endif // (defined(__sun) && defined(__SVR4)) || defined __APPLE__
-#else
-#define SCANF_PREFIX "511"
-#define SCANF_STRING(s) (s = malloc(512))
-#define GETCWD_SIZE -1
-#define SNPRINTF_STORAGE_CLASS static inline
-#endif // defined __GNUC__
+# define SCANF_PREFIX "511"
+# define SCANF_STRING(s) (s = malloc(512))
+#endif /* SCANF_CAN_MALLOC */
 
-#ifdef SNPRINTF_STORAGE_CLASS
-SNPRINTF_STORAGE_CLASS int
-snprintf(char *str, size_t n, const char *fmt, ...)
+#if PREFER_PORTABLE_SNPRINTF
+static inline int
+portable_snprintf(char *str, size_t n, const char *fmt, ...)
 {
 	int ret;
 	va_list ap;
@@ -243,49 +296,74 @@ snprintf(char *str, size_t n, const char *fmt, ...)
 	va_end(ap);
 	return ret;
 }
-#endif // defined SNPRINTF_STORAGE_CLASS
+# define SNPRINTF portable_snprintf
+#else
+# define SNPRINTF snprintf
+#endif /* PREFER_PORTABLE_SNPRINTF */
 
-#if defined(__APPLE__) && defined(__GNUC__)
-// getline() replacement for Darwin, might work on other systems
-// written according to the getline man page included with Debian Linux
+#if !HAVE_GETLINE
+// getline() replacement for Darwin and Solaris etc.
+// This code uses backward seeks (unless rchunk is set to 1) which can't work
+// on pipes etc. However, add2fs_from_file() only calls getline() for
+// regular files, so a larger rchunk and backward seeks are okay.
+
 ssize_t 
 getline(char **lineptr, size_t *n, FILE *stream)
 {
-	char *buf = *lineptr;	// could be NULL, in which case we allocate
-	size_t bufsize = *n;	// current buffer size, adjust if we (re)alloc
+	char *p;                    // reads stored here
+	size_t const rchunk = 1024; // number of bytes to read
+	size_t const mchunk = 1024; // number of extra bytes to malloc
+	size_t m = rchunk + 1;      // initial buffer size
 	
-	char *temp = NULL;
-	size_t tempsize = 0;
-	
-	// temp is not a C string and we don't own the buffer it points into
-	// must copy into a malloced buffer and NULL terminate
-	temp = fgetln(stream, &tempsize);
-	if(!temp) return -1;
-	
-	tempsize++; // adjust for NULL terminator
-	if(buf) {
-		// check if we have to reallocate
-		if(bufsize < tempsize) {
-			bufsize = tempsize;
-			buf = (char*)realloc(buf, tempsize);
-			if(!buf) return -1;
+	if (*lineptr) {
+		if (*n < m) {
+			*lineptr = (char*)realloc(*lineptr, m);
+			if (!*lineptr) return -1;
+			*n = m;
 		}
 	} else {
-		bufsize = tempsize;
-		buf = (char*)malloc(bufsize);
-		if(!buf) return -1;
+		*lineptr = (char*)malloc(m);
+		if (!*lineptr) return -1;
+		*n = m;
 	}
-	
-	memcpy(buf, temp, tempsize-1);
-	buf[tempsize-1] = '\0';
-	
-	// give new pointer and size back, nondestructive if we didn't change anything..
-	*n = bufsize;
-	*lineptr = buf;
-	
-	return (ssize_t)(tempsize-1);	// don't include the NULL terminator, per getline man page
+
+	m = 0; // line length including newline
+
+	do {
+		size_t i;     // number of bytes read etc
+		size_t j = 0; // number of bytes searched
+
+		p = *lineptr + m;
+
+		i = fread(p, 1, rchunk, stream);
+		while (j < i) {
+			++j;
+			if (*p++ == '\n') {
+				*p = '\0';
+				if (j != i && fseek(stream, j - i, SEEK_CUR))
+					return -1;
+				m += j;
+				return m;
+			}
+		}
+
+		m += j;
+		if (feof(stream)) {
+			if (!i) return -1;
+			return m;
+		}
+
+		// allocate space for next read plus possible null terminator
+		i = ((m + (rchunk + 1 > mchunk ? rchunk + 1 : mchunk) +
+		      mchunk - 1) / mchunk) * mchunk;
+		if (i != *n) {
+			*lineptr = (char*)realloc(*lineptr, i);
+			if (!*lineptr) return -1;
+			*n = i;
+		}
+	} while (1);
 }
-#endif
+#endif /* HAVE_GETLINE */
 
 // Convert a numerical string to a float, and multiply the result by an
 // SI-style multiplier if provided; supported multipliers are Ki, Mi, Gi, k, M
@@ -298,7 +376,11 @@ SI_atof(const char *nptr)
 	float m = 1;
 	char *suffixptr;
 
+#if HAVE_STRTOF
 	f = strtof(nptr, &suffixptr);
+#else
+	f = (float)strtod(nptr, &suffixptr);
+#endif /* HAVE_STRTOF */
 
 	if (*suffixptr) {
 		if (!strcmp(suffixptr, "Ki"))
@@ -1483,12 +1565,13 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			if(count > 0)
 			{
 				char *dname;
-				unsigned i, len;
+				unsigned long i;
+				unsigned len;
 				len = strlen(name) + 10;
 				dname = malloc(len + 1);
 				for(i = start; i < count; i++)
 				{
-					snprintf(dname, len, "%s%u", name, i);
+					SNPRINTF(dname, len, "%s%lu", name, i);
 					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor + (i * increment - start), ctime, mtime);
 				}
 				free(dname);
@@ -1572,12 +1655,14 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			}
 			switch(st.st_mode & S_IFMT)
 			{
+#if HAVE_STRUCT_STAT_ST_RDEV
 				case S_IFCHR:
 					nod = mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
 					break;
 				case S_IFBLK:
 					nod = mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
 					break;
+#endif
 				case S_IFIFO:
 					nod = mknod_fs(fs, this_nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
 					break;
@@ -2260,7 +2345,7 @@ print_fs(filesystem *fs)
 	     fs->sb.s_blocks_per_group, fs->sb.s_frags_per_group,
 	     fs->sb.s_inodes_per_group);
 	printf("Size of inode table: %d blocks\n",
-			fs->sb.s_inodes_per_group * sizeof(inode)/BLOCKSIZE);
+		(int)(fs->sb.s_inodes_per_group * sizeof(inode) / BLOCKSIZE));
 	for (i = 0; i < GRP_NBGROUPS(fs); i++) {
 		printf("Group No: %d\n", i+1);
 		printf("block bitmap: block %d,inode bitmap: block %d, inode table: block %d\n",
@@ -2366,6 +2451,7 @@ main(int argc, char **argv)
 		exit(0);
 	}
 
+#if HAVE_GETOPT_LONG
 	struct option longopts[] = {
 	  { "starting-image",	required_argument,	NULL, 'x' },
 	  { "root",		required_argument,	NULL, 'd' },
@@ -2388,6 +2474,9 @@ main(int argc, char **argv)
 	} ;
 
 	while((c = getopt_long(argc, argv, "x:d:D:b:i:I:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+#else
+	while((c = getopt(argc, argv,      "x:d:D:b:i:I:r:g:e:zfqUPhVv")) != EOF) {
+#endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
 			case 'x':
@@ -2476,7 +2565,8 @@ main(int argc, char **argv)
 		{
 			struct stat st;
 			FILE *fh;
-			char *pdir, *pdest;
+			int pdir;
+			char *pdest;
 			uint32 nod = EXT2_ROOT_INO;
 			if((pdest = strchr(dopt[i], ':')))
 				*pdest = 0;
@@ -2489,14 +2579,15 @@ main(int argc, char **argv)
 					fclose(fh);
 					break;
 				case S_IFDIR:
-					if(!(pdir = getcwd(0, GETCWD_SIZE)))
-						perror_msg_and_die(dopt[i]);
+					if((pdir = open(".", O_RDONLY)) < 0)
+						perror_msg_and_die(".");
 					if(chdir(dopt[i]) < 0)
 						perror_msg_and_die(dopt[i]);
 					add2fs_from_dir(fs, nod, squash_uids, squash_perms, 0, &stats);
-					if(chdir(pdir) < 0)
-						perror_msg_and_die(pdir);
-					free(pdir);
+					if(fchdir(pdir) < 0)
+						perror_msg_and_die("fchdir");
+					if(close(pdir) < 0)
+						perror_msg_and_die("close");
 					break;
 				default:
 					error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
@@ -2542,7 +2633,8 @@ main(int argc, char **argv)
 	{
 		struct stat st;
 		FILE *fh;
-		char *pdir, *pdest;
+		int pdir;
+		char *pdest;
 		uint32 nod = EXT2_ROOT_INO;
 		if((pdest = strchr(dopt[i], ':')))
 		{
@@ -2559,14 +2651,15 @@ main(int argc, char **argv)
 				fclose(fh);
 				break;
 			case S_IFDIR:
-				if(!(pdir = getcwd(0, GETCWD_SIZE)))
-					perror_msg_and_die(dopt[i]);
+				if((pdir = open(".", O_RDONLY)) < 0)
+					perror_msg_and_die(".");
 				if(chdir(dopt[i]) < 0)
 					perror_msg_and_die(dopt[i]);
 				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, NULL );
-				if(chdir(pdir) < 0)
-					perror_msg_and_die(pdir);
-				free(pdir);
+				if(fchdir(pdir) < 0)
+					perror_msg_and_die("fchdir");
+				if(close(pdir) < 0)
+					perror_msg_and_die("close");
 				break;
 			default:
 				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
@@ -2590,7 +2683,7 @@ main(int argc, char **argv)
 			error_msg_and_die("path %s not found in filesystem", gopt[i]);
 		while((p = strchr(gopt[i], '/')))
 			*p = '_';
-		snprintf(fname, MAX_FILENAME-1, "%s.blk", gopt[i]);
+		SNPRINTF(fname, MAX_FILENAME-1, "%s.blk", gopt[i]);
 		fh = xfopen(fname, "w");
 		fprintf(fh, "%d:", get_nod(fs, nod)->i_size);
 		flist_blocks(fs, nod, fh);

@@ -8,7 +8,7 @@ die() {
 ./clean.sh
 
 automake_flags="-c -a"
-for p in aclocal autoconf automake ; do
+for p in aclocal autoconf autoheader automake; do
 	flags=${p}_flags
 	if ! ${p} ${!flags} ; then
 		echo "*** ${p} failed :("
