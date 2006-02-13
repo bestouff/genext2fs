@@ -1,9 +1,9 @@
 This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
 
 - long options support
-- support for SI-style suffixes for some option values.
+- support for SI-style suffixes for some option values
 - --faketime option
-- more capable device_table.txt format
+- more capable device table format, compatible with that of mkfs.jffs2
 - hardlink support
 - socket support
 - big filesystems (>8MB) support
