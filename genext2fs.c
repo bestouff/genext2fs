@@ -308,11 +308,11 @@ portable_snprintf(char *str, size_t n, const char *fmt, ...)
 // regular files, so a larger rchunk and backward seeks are okay.
 
 ssize_t 
-getline(char **lineptr, size_t *n, FILE *stream)
+getdelim(char **lineptr, size_t *n, int delim, FILE *stream)
 {
 	char *p;                    // reads stored here
-	size_t const rchunk = 1024; // number of bytes to read
-	size_t const mchunk = 1024; // number of extra bytes to malloc
+	size_t const rchunk = 512;  // number of bytes to read
+	size_t const mchunk = 512;  // number of extra bytes to malloc
 	size_t m = rchunk + 1;      // initial buffer size
 	
 	if (*lineptr) {
@@ -327,7 +327,7 @@ getline(char **lineptr, size_t *n, FILE *stream)
 		*n = m;
 	}
 
-	m = 0; // line length including newline
+	m = 0; // record length including seperator
 
 	do {
 		size_t i;     // number of bytes read etc
@@ -336,12 +336,18 @@ getline(char **lineptr, size_t *n, FILE *stream)
 		p = *lineptr + m;
 
 		i = fread(p, 1, rchunk, stream);
+		if (i < rchunk && ferror(stream))
+			return -1;
 		while (j < i) {
 			++j;
-			if (*p++ == '\n') {
+			if (*p++ == (char)delim) {
 				*p = '\0';
-				if (j != i && fseek(stream, j - i, SEEK_CUR))
-					return -1;
+				if (j != i) {
+					if (fseek(stream, j - i, SEEK_CUR))
+						return -1;
+					if (feof(stream))
+						clearerr(stream);
+				}
 				m += j;
 				return m;
 			}
@@ -349,8 +355,8 @@ getline(char **lineptr, size_t *n, FILE *stream)
 
 		m += j;
 		if (feof(stream)) {
+			if (m) return m;
 			if (!i) return -1;
-			return m;
 		}
 
 		// allocate space for next read plus possible null terminator
@@ -363,6 +369,7 @@ getline(char **lineptr, size_t *n, FILE *stream)
 		}
 	} while (1);
 }
+#define getline(a,b,c) getdelim(a,b,'\n',c)
 #endif /* HAVE_GETLINE */
 
 // Convert a numerical string to a float, and multiply the result by an
