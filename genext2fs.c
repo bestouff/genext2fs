@@ -373,7 +373,7 @@ getdelim(char **lineptr, size_t *n, int delim, FILE *stream)
 #endif /* HAVE_GETLINE */
 
 // Convert a numerical string to a float, and multiply the result by an
-// SI-style multiplier if provided; supported multipliers are Ki, Mi, Gi, k, M
+// IEC or SI multiplier if provided; supported multipliers are Ki, Mi, Gi, k, M
 // and G.
 
 float
