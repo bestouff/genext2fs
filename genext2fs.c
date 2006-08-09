@@ -1893,11 +1893,11 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	inode *itab0;
 	
 	if(nbresrvd < 0)
-		error_msg_and_die("reserved blocks value is invalid. Note: options have changed, see man page.");
+		error_msg_and_die("reserved blocks value is invalid. Note: options have changed, see --help or the man page.");
 	if(nbinodes < 12)
-		error_msg_and_die("too few inodes. Note: options have changed, see man page.");
+		error_msg_and_die("too few inodes. Note: options have changed, see --help or the man page.");
 	if(nbblocks < 8)
-		error_msg_and_die("too few blocks. Note: options have changed, see man page.");
+		error_msg_and_die("too few blocks. Note: options have changed, see --help or the man page.");
 
 	/* nbblocks is the total number of blocks in the filesystem. First
 	 * calculate the size of each group assuming each group has
@@ -2538,12 +2538,12 @@ main(int argc, char **argv)
 				showversion();
 				break;
 			default:
-				error_msg_and_die("Note: options have changed, see man page.");
+				error_msg_and_die("Note: options have changed, see --help or the man page.");
 		}
 	}
 
 	if(optind < (argc - 1))
-		error_msg_and_die("Too many arguments. Note: options have changed, see man page.");
+		error_msg_and_die("Too many arguments. Note: options have changed, see --help or the man page.");
 	if(optind == (argc - 1))
 		fsout = argv[optind];
 
