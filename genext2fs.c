@@ -2398,7 +2398,7 @@ showhelp(void)
 	"  -D, --devtable <file>\n"
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
-	"  -I, --number-of-inodes <number of inodes>\n"
+	"  -N, --number-of-inodes <number of inodes>\n"
 	"  -r, --reserved-blocks <number of reserved blocks>\n"
 	"  -g, --block-map <path>     Generate a block map file for this path.\n"
 	"  -e, --fill-value <value>   Fill unallocated blocks with value.\n"
@@ -2465,7 +2465,7 @@ main(int argc, char **argv)
 	  { "devtable",		required_argument,	NULL, 'D' },
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
-	  { "number-of-inodes",	required_argument,	NULL, 'I' },
+	  { "number-of-inodes",	required_argument,	NULL, 'N' },
 	  { "reserved-blocks",	required_argument,	NULL, 'r' },
 	  { "block-map",	required_argument,	NULL, 'g' },
 	  { "fill-value",	required_argument,	NULL, 'e' },
@@ -2480,9 +2480,9 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:i:I:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:i:N:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
-	while((c = getopt(argc, argv,      "x:d:D:b:i:I:r:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:b:i:N:r:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -2499,7 +2499,7 @@ main(int argc, char **argv)
 			case 'i':
 				bytes_per_inode = SI_atof(optarg);
 				break;
-			case 'I':
+			case 'N':
 				nbinodes = SI_atof(optarg);
 				break;
 			case 'r':
