@@ -768,7 +768,6 @@ is_hardlink(ino_t inode)
 	for(i = 0; i < hdlinks.count; i++) {
 		if(hdlinks.hdl[i].src_inode == inode)
 			return i;
-		
 	}
 	return -1;		
 }
@@ -790,7 +789,7 @@ free_workblk(block b)
 }
 
 /* Rounds qty upto a multiple of siz. siz should be a power of 2 */
-static uint32
+static inline uint32
 rndup(uint32 qty, uint32 siz)
 {
 	return (qty + (siz - 1)) & ~(siz - 1);
@@ -1202,28 +1201,30 @@ extend_blk(filesystem *fs, uint32 nod, block b, int amount)
 		while(walk_bw(fs, nod, &bw, &create, 0) != WALK_END)
 			/*nop*/;
 		get_nod(fs, nod)->i_blocks += amount * INOBLK;
-		return;
 	}
-	lbw = bw;
-	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
-		lbw = bw;
-	bw = lbw;
-	while(create)
+	else
 	{
-		int i, copyb = 0;
-		if(!(fs->sb.s_reserved[200] & OP_HOLES))
-			copyb = 1;
-		else
-			for(i = 0; i < BLOCKSIZE / 4; i++)
-				if(((int32*)(b + BLOCKSIZE * (amount - create)))[i])
-				{
-					copyb = 1;
-					break;
-				}
-		if((bk = walk_bw(fs, nod, &bw, &create, !copyb)) == WALK_END)
-			break;
-		if(copyb)
-			memcpy(get_blk(fs, bk), b + BLOCKSIZE * (amount - create - 1), BLOCKSIZE);
+		lbw = bw;
+		while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
+			lbw = bw;
+		bw = lbw;
+		while(create)
+		{
+			int i, copyb = 0;
+			if(!(fs->sb.s_reserved[200] & OP_HOLES))
+				copyb = 1;
+			else
+				for(i = 0; i < BLOCKSIZE / 4; i++)
+					if(((int32*)(b + BLOCKSIZE * (amount - create)))[i])
+					{
+						copyb = 1;
+						break;
+					}
+			if((bk = walk_bw(fs, nod, &bw, &create, !copyb)) == WALK_END)
+				break;
+			if(copyb)
+				memcpy(get_blk(fs, bk), b + BLOCKSIZE * (amount - create - 1), BLOCKSIZE);
+		}
 	}
 }
 
@@ -1285,7 +1286,8 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 		}
 	}
 	// we found no free entry in the directory, so we add a block
-	b = get_workblk();
+	if(!(b = get_workblk())
+		error_msg_and_die("get_workblk() failed.", name);
 	d = (directory*)b;
 	d->d_inode = nod;
 	node = get_nod(fs, nod);
@@ -2004,7 +2006,8 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	itab0[EXT2_ROOT_INO-1].i_size = BLOCKSIZE;
 	itab0[EXT2_ROOT_INO-1].i_links_count = 2;
 
-	b = get_workblk();
+	if(!(b = get_workblk())
+		error_msg_and_die("get_workblk() failed.", name);
 	d = (directory*)b;
 	d->d_inode = EXT2_ROOT_INO;
 	d->d_rec_len = sizeof(directory)+4;
