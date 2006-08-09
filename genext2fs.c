@@ -145,6 +145,7 @@ struct stats {
 
 #define BLOCKSIZE         1024
 #define BLOCKS_PER_GROUP  8192
+#define INODES_PER_GROUP  8192
 /* Percentage of blocks that are reserved.*/
 #define RESERVED_BLOCKS       5/100
 #define MAX_RESERVED_BLOCKS  25/100
@@ -862,7 +863,7 @@ alloc_blk(filesystem *fs, uint32 nod)
 	uint32 bk=0;
 	uint32 grp,nbgroups;
 
-	grp = nod/fs->sb.s_inodes_per_group;
+	grp = GRP_GROUP_OF_INODE(fs,nod);
 	nbgroups = GRP_NBGROUPS(fs);
 	if(!(bk = allocate(get_blk(fs,fs->gd[grp].bg_block_bitmap), 0))) {
 		for(grp=0;grp<nbgroups && !bk;grp++)
@@ -1888,8 +1889,8 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	uint8 * b;
 	uint32 nod, first_block;
 	uint32 nbgroups,nbinodes_per_group,overhead_per_group,free_blocks,
-		free_blocks_per_group,nbblocks_per_group;
-	uint32 gd,itbl,ibmpos,bbmpos,itblpos;
+		free_blocks_per_group,nbblocks_per_group,min_nbgroups;
+	uint32 gdsz,itblsz,bbmpos,ibmpos,itblpos;
 	uint32 j;
 	uint8 *bbm,*ibm;
 	inode *itab0;
@@ -1901,27 +1902,28 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	if(nbblocks < 8)
 		error_msg_and_die("too few blocks. Note: options have changed, see --help or the man page.");
 
-	/* nbblocks is the total number of blocks in the filesystem. First
-	 * calculate the size of each group assuming each group has
-	 * BLOCKS_PER_GROUP blocks (which is the maximum). Then recalculate
-	 * blocks per group so that each group (except possibly the last one)
-	 * has the same number of blocks. nbinodes is the total number of
-	 * inodes in the system. These are divided between all groups.
-	 * Then calculate the overhead blocks - inode table blocks, bitmap
-	 * blocks, group descriptor blocks etc. 
+	/* nbinodes is the total number of inodes in the system.
+	 * a block group can have no more than 8192 inodes.
 	 */
+	min_nbgroups = (nbinodes + INODES_PER_GROUP - 1) / INODES_PER_GROUP;
 
+	/* nbblocks is the total number of blocks in the filesystem.
+	 * a block group can have no more than 8192 blocks.
+	 */
 	first_block = (BLOCKSIZE == 1024);
 	nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
+	if(nbgroups < min_nbgroups) nbgroups = min_nbgroups;
 	nbblocks_per_group = rndup((nbblocks - first_block + nbgroups - 1)/nbgroups, 8);
 	nbinodes_per_group = rndup((nbinodes + nbgroups - 1)/nbgroups,
 						(BLOCKSIZE/sizeof(inode)));
 	if (nbinodes_per_group < 16)
 		nbinodes_per_group = 16; //minimum number b'cos the first 10 are reserved
 
-	gd = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
-	itbl = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
-	overhead_per_group = 3 /*sb,ibm,bbm*/ + itbl + gd;
+	gdsz = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
+	itblsz = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
+	overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
+	if(nbblocks - 1 < overhead_per_group * nbgroups)
+		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 	free_blocks = nbblocks - overhead_per_group*nbgroups - 1 /*boot block*/;
 	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
 
@@ -1945,11 +1947,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	fs->sb.s_lastcheck = fs_timestamp;
 
 	// set up groupdescriptors
-	for(i = 0,bbmpos=2+gd,ibmpos=3+gd,itblpos =4+gd;
+	for(i=0, bbmpos=gdsz+2, ibmpos=bbmpos+1, itblpos=ibmpos+1;
 		i<nbgroups;
-		i++, bbmpos += nbblocks_per_group,ibmpos += nbblocks_per_group, 
-		itblpos += nbblocks_per_group)  {
-		
+		i++, bbmpos+=nbblocks_per_group, ibmpos+=nbblocks_per_group, itblpos+=nbblocks_per_group)
+	{
 		if(free_blocks > free_blocks_per_group) {
 			fs->gd[i].bg_free_blocks_count = free_blocks_per_group;
 			free_blocks -= free_blocks_per_group;
@@ -1987,6 +1988,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 		//non-filesystem inodes
 		for(j = fs->sb.s_inodes_per_group+1; j <= BLOCKSIZE * 8; j++)
 			allocate(ibm, j);
+
 		//system inodes
 		if(i == 0)
 			for(j = 1; j < EXT2_FIRST_INO; j++)
