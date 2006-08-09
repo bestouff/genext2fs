@@ -12,8 +12,9 @@ This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
 There are also various bugfixes and an up-to-date manpage.
 
 IMPORTANT: in order to be more consistent with mkfs.jffs2 and mkfs.ext2,
-some option letters have changed: -D replaces the old -f, and -N replaces the
-old -i. Also, this version of genext2fs no longer supports the old devices
-table format. See the man page for more information.
+some option letters have changed: -D replaces the old -f, -N replaces the
+old -i and -m replaces the old -r. Also, this version of genext2fs no
+longer supports the old devices table format. See the man page for more
+information.
 
 Please report bugs to genext2fs-devel@lists.sourceforge.net

@@ -1893,11 +1893,11 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	inode *itab0;
 	
 	if(nbresrvd < 0)
-		error_msg_and_die("reserved blocks value is invalid");
+		error_msg_and_die("reserved blocks value is invalid. Note: options have changed, see man page.");
 	if(nbinodes < 12)
-		error_msg_and_die("too few inodes");
+		error_msg_and_die("too few inodes. Note: options have changed, see man page.");
 	if(nbblocks < 8)
-		error_msg_and_die("too few blocks");
+		error_msg_and_die("too few blocks. Note: options have changed, see man page.");
 
 	/* nbblocks is the total number of blocks in the filesystem. First
 	 * calculate the size of each group assuming each group has
@@ -2399,7 +2399,7 @@ showhelp(void)
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
 	"  -N, --number-of-inodes <number of inodes>\n"
-	"  -r, --reserved-blocks <number of reserved blocks>\n"
+	"  -m, --reserved-percentage <percentage of blocks to reserve>\n"
 	"  -g, --block-map <path>     Generate a block map file for this path.\n"
 	"  -e, --fill-value <value>   Fill unallocated blocks with value.\n"
 	"  -z, --allow-holes          Allow files with holes.\n"
@@ -2466,7 +2466,7 @@ main(int argc, char **argv)
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
 	  { "number-of-inodes",	required_argument,	NULL, 'N' },
-	  { "reserved-blocks",	required_argument,	NULL, 'r' },
+	  { "reserved-percentage", required_argument,	NULL, 'm' },
 	  { "block-map",	required_argument,	NULL, 'g' },
 	  { "fill-value",	required_argument,	NULL, 'e' },
 	  { "allow-holes",	no_argument, 		NULL, 'z' },
@@ -2480,9 +2480,9 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:i:N:r:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:b:i:N:m:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
-	while((c = getopt(argc, argv,      "x:d:D:b:i:N:r:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:b:i:N:m:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -2502,7 +2502,7 @@ main(int argc, char **argv)
 			case 'N':
 				nbinodes = SI_atof(optarg);
 				break;
-			case 'r':
+			case 'm':
 				nbresrvd = SI_atof(optarg);
 				break;
 			case 'g':
@@ -2543,7 +2543,7 @@ main(int argc, char **argv)
 	}
 
 	if(optind < (argc - 1))
-		error_msg_and_die("too many arguments");
+		error_msg_and_die("Too many arguments. Note: options have changed, see man page.");
 	if(optind == (argc - 1))
 		fsout = argv[optind];
 
@@ -2632,6 +2632,8 @@ main(int argc, char **argv)
 #endif
 		if(nbresrvd == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
+		else 
+			nbresrvd = nbblocks / 100 * nbresrvd;
 		if(fs_timestamp == -1)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes, fs_timestamp);
