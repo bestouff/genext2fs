@@ -2437,6 +2437,7 @@ main(int argc, char **argv)
 	int tmp_nbinodes = -1;
 #endif
 	float bytes_per_inode = -1;
+	float reserved_frac = -1;
 	int fs_timestamp = -1;
 	char * fsout = "-";
 	char * fsin = 0;
@@ -2508,7 +2509,7 @@ main(int argc, char **argv)
 				nbinodes = SI_atof(optarg);
 				break;
 			case 'm':
-				nbresrvd = SI_atof(optarg);
+				reserved_frac = SI_atof(optarg) / 100;
 				break;
 			case 'g':
 				gopt[gidx++] = optarg;
@@ -2635,10 +2636,10 @@ main(int argc, char **argv)
 				nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
 		}
 #endif
-		if(nbresrvd == -1)
+		if(reserved_frac == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
 		else 
-			nbresrvd = nbblocks / 100 * nbresrvd;
+			nbresrvd = nbblocks * reserved_frac;
 		if(fs_timestamp == -1)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes, fs_timestamp);
