@@ -1286,8 +1286,8 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 		}
 	}
 	// we found no free entry in the directory, so we add a block
-	if(!(b = get_workblk())
-		error_msg_and_die("get_workblk() failed.", name);
+	if(!(b = get_workblk()))
+		error_msg_and_die("get_workblk() failed.");
 	d = (directory*)b;
 	d->d_inode = nod;
 	node = get_nod(fs, nod);
@@ -2006,8 +2006,8 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	itab0[EXT2_ROOT_INO-1].i_size = BLOCKSIZE;
 	itab0[EXT2_ROOT_INO-1].i_links_count = 2;
 
-	if(!(b = get_workblk())
-		error_msg_and_die("get_workblk() failed.", name);
+	if(!(b = get_workblk()))
+		error_msg_and_die("get_workblk() failed.");
 	d = (directory*)b;
 	d->d_inode = EXT2_ROOT_INO;
 	d->d_rec_len = sizeof(directory)+4;
