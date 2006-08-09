@@ -2538,7 +2538,7 @@ main(int argc, char **argv)
 				showversion();
 				break;
 			default:
-				exit(1);
+				error_msg_and_die("Note: options have changed, see man page.");
 		}
 	}
 
