@@ -896,7 +896,7 @@ free_blk(filesystem *fs, uint32 bk)
 static uint32
 alloc_nod(filesystem *fs)
 {
-	uint32 nod=0,best_group=0;
+	uint32 nod,best_group=0;
 	uint32 grp,nbgroups,avefreei;
 
 	nbgroups = GRP_NBGROUPS(fs);
@@ -907,8 +907,9 @@ alloc_nod(filesystem *fs)
 	/* Idea from find_group_dir in fs/ext2/ialloc.c in 2.4.19 kernel      */
 	/* We do it for all inodes.                                           */
 	avefreei  =  fs->sb.s_free_inodes_count / nbgroups;
-	for(grp=0;grp<nbgroups && !nod;grp++) {
-		if (fs->gd[grp].bg_free_inodes_count < avefreei)
+	for(grp=0; grp<nbgroups; grp++) {
+		if (fs->gd[grp].bg_free_inodes_count < avefreei ||
+		    fs->gd[grp].bg_free_inodes_count == 0)
 			continue;
 		if (!best_group || 
 			fs->gd[grp].bg_free_blocks_count > fs->gd[best_group].bg_free_blocks_count)
