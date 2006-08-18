@@ -1425,13 +1425,10 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size
 	extend_blk(fs, nod, 0, - (int)get_nod(fs, nod)->i_blocks / INOBLK);
 	get_nod(fs, nod)->i_size = size;
 	if (size) {
-		if(!(b = (uint8*)malloc(rndup(size, BLOCKSIZE))))
+		if(!(b = (uint8*)calloc(rndup(size, BLOCKSIZE), 1)))
 			error_msg_and_die("not enough mem to read file '%s'", name);
-		memset(b, 0,rndup(size, BLOCKSIZE));
 		if(f)
 			fread(b, size, 1, f); // FIXME: ugly. use mmap() ...
-		else
-			memset(b, 0, size); // .. or handle b = 0
 		extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
 		free(b);
 	}
