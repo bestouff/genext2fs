@@ -1525,51 +1525,53 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				error_msg("device table line %d skipped: bad format for entry '%s'", lineno, path);
 			continue;
 		}
-		if(stats)
+		mode &= FM_IMASK;
+		path2 = strdup(path);
+		name = basename(path);
+		dir = dirname(path2);
+		if((!strcmp(name, ".")) || (!strcmp(name, "..")))
 		{
-			stats->ninodes += count ? count : 1;
+			error_msg("device table line %d skipped", lineno);
+			continue;
 		}
-		else
+		if(fs)
 		{
-			mode &= FM_IMASK;
-			path2 = strdup(path);
-			name = basename(path);
-			dir = dirname(path2);
 			if(!(nod = find_path(fs, this_nod, dir)))
 			{
 				error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
 				continue;
 			}
-			if((!strcmp(name, ".")) || (!strcmp(name, "..")))
-			{
-				error_msg("device table line %d skipped", lineno);
+		}
+		switch (type)
+		{
+			case 'd':
+				mode |= FM_IFDIR;
+				break;
+			case 'f':
+				mode |= FM_IFREG;
+				break;
+			case 'p':
+				mode |= FM_IFIFO;
+				break;
+			case 's':
+				mode |= FM_IFSOCK;
+				break;
+			case 'c':
+				mode |= FM_IFCHR;
+				break;
+			case 'b':
+				mode |= FM_IFBLK;
+				break;
+			default:
+				error_msg("device table line %d skipped: bad type '%c' for entry '%s'", lineno, type, name);
 				continue;
-			}
-	
-			switch (type)
-			{
-				case 'd':
-					mode |= FM_IFDIR;
-					break;
-				case 'f':
-					mode |= FM_IFREG;
-					break;
-				case 'p':
-					mode |= FM_IFIFO;
-					break;
-				case 's':
-					mode |= FM_IFSOCK;
-					break;
-				case 'c':
-					mode |= FM_IFCHR;
-					break;
-				case 'b':
-					mode |= FM_IFBLK;
-					break;
-				default:
-					error_msg("device table line %d skipped: bad type '%c' for entry '%s'", lineno, type, name);
-					continue;
-			}
+		}
+		if(stats) {
+			if(count > 0)
+				stats->ninodes += count - start;
+			else
+				stats->ninodes++;
+		} else {
 			if(count > 0)
 			{
 				char *dname;
@@ -1649,7 +1651,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				default:
 					break;
 			}
-		else {
+		else
+		{
 			save_nod = 0;
 			/* Check for hardlinks */
 			if (!S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_nlink > 1) {
@@ -1895,7 +1898,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	
 	if(nbresrvd < 0)
 		error_msg_and_die("reserved blocks value is invalid. Note: options have changed, see --help or the man page.");
-	if(nbinodes < 12)
+	if(nbinodes < EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0))
 		error_msg_and_die("too few inodes. Note: options have changed, see --help or the man page.");
 	if(nbblocks < 8)
 		error_msg_and_die("too few blocks. Note: options have changed, see --help or the man page.");
@@ -1920,7 +1923,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	gdsz = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
 	itblsz = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
 	overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
-	if(nbblocks - 1 < overhead_per_group * nbgroups)
+	if((uint32)nbblocks - 1 < overhead_per_group * nbgroups)
 		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 	free_blocks = nbblocks - overhead_per_group*nbgroups - 1 /*boot block*/;
 	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
@@ -2386,6 +2389,49 @@ dump_fs(filesystem *fs, FILE * fh, int swapit)
 }
 
 static void
+populate_fs(filesystem *fs, char **dopt, int didx, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+{
+	int i;
+	for(i = 0; i < didx; i++)
+	{
+		struct stat st;
+		FILE *fh;
+		int pdir;
+		char *pdest;
+		uint32 nod = EXT2_ROOT_INO;
+		if(fs)
+			if((pdest = strchr(dopt[i], ':')))
+			{
+				*(pdest++) = 0;
+				if(!(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
+					error_msg_and_die("path %s not found in filesystem", pdest);
+			}
+		stat(dopt[i], &st);
+		switch(st.st_mode & S_IFMT)
+		{
+			case S_IFREG:
+				fh = xfopen(dopt[i], "r");
+				add2fs_from_file(fs, nod, fh, fs_timestamp, stats);
+				fclose(fh);
+				break;
+			case S_IFDIR:
+				if((pdir = open(".", O_RDONLY)) < 0)
+					perror_msg_and_die(".");
+				if(chdir(dopt[i]) < 0)
+					perror_msg_and_die(dopt[i]);
+				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+				if(fchdir(pdir) < 0)
+					perror_msg_and_die("fchdir");
+				if(close(pdir) < 0)
+					perror_msg_and_die("close");
+				break;
+			default:
+				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
+		}
+	}
+}
+
+static void
 showversion(void)
 {
 	printf("genext2fs " VERSION "\n");
@@ -2430,8 +2476,7 @@ main(int argc, char **argv)
 	int nbblocks = -1;
 	int nbinodes = -1;
 	int nbresrvd = -1;
-#if 0
-	int tmp_nbblocks = -1;
+#if 1
 	int tmp_nbinodes = -1;
 #endif
 	float bytes_per_inode = -1;
@@ -2569,62 +2614,30 @@ main(int argc, char **argv)
 	}
 	else
 	{
-		stats.ninodes = 0;
-		stats.nblocks = 0;
-#if 0
-		for(i = 0; i < didx; i++)
-		{
-			struct stat st;
-			FILE *fh;
-			int pdir;
-			char *pdest;
-			uint32 nod = EXT2_ROOT_INO;
-			if((pdest = strchr(dopt[i], ':')))
-				*pdest = 0;
-			stat(dopt[i], &st);
-			switch(st.st_mode & S_IFMT)
-			{
-				case S_IFREG:
-					fh = xfopen(dopt[i], "r");
-					add2fs_from_file(fs, nod, fh, 0, &stats);
-					fclose(fh);
-					break;
-				case S_IFDIR:
-					if((pdir = open(".", O_RDONLY)) < 0)
-						perror_msg_and_die(".");
-					if(chdir(dopt[i]) < 0)
-						perror_msg_and_die(dopt[i]);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, 0, &stats);
-					if(fchdir(pdir) < 0)
-						perror_msg_and_die("fchdir");
-					if(close(pdir) < 0)
-						perror_msg_and_die("close");
-					break;
-				default:
-					error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
-			}
-			if(pdest)
-				*pdest = ':';
-		}
+		if(reserved_frac == -1)
+			nbresrvd = nbblocks * RESERVED_BLOCKS;
+		else 
+			nbresrvd = nbblocks * reserved_frac;
 
-		tmp_nbblocks = stats.nblocks; // FIXME: should add space taken by inodes too
-		if(tmp_nbblocks > nbblocks)
-		{
-			fprintf(stderr, "number of blocks too low, increasing to %d\n",tmp_nbblocks);
-			nbblocks = tmp_nbblocks;
-		}
+#if 1
+		stats.ninodes = EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
+		stats.nblocks = 0;
+
+		populate_fs(NULL, dopt, didx, squash_uids, squash_perms, fs_timestamp, &stats);
+
+		if(nbinodes == -1)
+			nbinodes = stats.ninodes;
+		else
+			if(stats.ninodes > (unsigned long)nbinodes)
+			{
+				fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
+				nbinodes = stats.ninodes;
+			}
 
 		if(bytes_per_inode != -1) {
 			tmp_nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
 			if(tmp_nbinodes > nbinodes)
 				nbinodes = tmp_nbinodes;
-		}
-
-		tmp_nbinodes = stats.ninodes + EXT2_FIRST_INO + 1;
-		if(tmp_nbinodes > nbinodes)
-		{
-			fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
-			nbinodes = tmp_nbinodes;
 		}
 #else
 		if(nbinodes == -1) {
@@ -2634,50 +2647,13 @@ main(int argc, char **argv)
 				nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
 		}
 #endif
-		if(reserved_frac == -1)
-			nbresrvd = nbblocks * RESERVED_BLOCKS;
-		else 
-			nbresrvd = nbblocks * reserved_frac;
 		if(fs_timestamp == -1)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes, fs_timestamp);
 	}
-	for(i = 0; i < didx; i++)
-	{
-		struct stat st;
-		FILE *fh;
-		int pdir;
-		char *pdest;
-		uint32 nod = EXT2_ROOT_INO;
-		if((pdest = strchr(dopt[i], ':')))
-		{
-			*(pdest++) = 0;
-			if(!(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
-				error_msg_and_die("path %s not found in filesystem", pdest);
-		}
-		stat(dopt[i], &st);
-		switch(st.st_mode & S_IFMT)
-		{
-			case S_IFREG:
-				fh = xfopen(dopt[i], "r");
-				add2fs_from_file(fs, nod, fh, fs_timestamp, NULL );
-				fclose(fh);
-				break;
-			case S_IFDIR:
-				if((pdir = open(".", O_RDONLY)) < 0)
-					perror_msg_and_die(".");
-				if(chdir(dopt[i]) < 0)
-					perror_msg_and_die(dopt[i]);
-				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, NULL );
-				if(fchdir(pdir) < 0)
-					perror_msg_and_die("fchdir");
-				if(close(pdir) < 0)
-					perror_msg_and_die("close");
-				break;
-			default:
-				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
-		}
-	}
+	
+	populate_fs(fs, dopt, didx, squash_uids, squash_perms, fs_timestamp, NULL);
+
 	if(emptyval) {
 		uint32 b;
 		for(b = 1; b < fs->sb.s_blocks_count; b++)

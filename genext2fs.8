@@ -2,7 +2,7 @@
 .\" First parameter, NAME, should be all caps
 .\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
 .\" other parameters are allowed: see man(7), man(1)
-.TH GENEXT2FS 8 "February 22, 2005"
+.TH GENEXT2FS 8 "August 19, 2006"
 .\" Please adjust this date whenever revising the manpage.
 .\"
 .\" Some roff macros, for reference:
@@ -28,6 +28,12 @@ you become the superuser to make device nodes.
 
 The filesystem image is created in the file \fIoutput-image\fP. If not
 specified, it is sent to stdout.
+
+By default, the maximum number of inodes in the filesystem is the minimum
+number required to accomodate the initial contents. If required, free inodes can be
+created by passing the relevant options. For read-only purposes, a minimal filesystem
+could be created by omitting those options and then minimizing the image
+size by trial and error.
 .SH OPTIONS
 .TP
 .BI "\-x, \-\-starting\-image image"

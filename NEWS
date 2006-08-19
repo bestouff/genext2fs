@@ -8,6 +8,7 @@ This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
 - socket support
 - big filesystems (>8MB) support
 - Solaris 2.x and Mac OS X support
+- automatic measurement of the filesystem inode count
 
 There are also various bugfixes and an up-to-date manpage.
 
