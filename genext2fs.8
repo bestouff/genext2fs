@@ -30,10 +30,11 @@ The filesystem image is created in the file \fIoutput-image\fP. If not
 specified, it is sent to stdout.
 
 By default, the maximum number of inodes in the filesystem is the minimum
-number required to accomodate the initial contents. If required, free inodes can be
-created by passing the relevant options. For read-only purposes, a minimal filesystem
-could be created by omitting those options and then minimizing the image
-size by trial and error.
+number required to accommodate the initial contents.
+In this way, a minimal filesystem (typically read-only) can be created with
+minimal free inodes.
+If required, free inodes can be added by passing the relevant options.
+The filesystem image size in blocks can be minimised by trial and error.
 .SH OPTIONS
 .TP
 .BI "\-x, \-\-starting\-image image"
