@@ -1639,6 +1639,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
+				case S_IFSOCK:
 					stats->ninodes++;
 					break;
 				case S_IFDIR:
