@@ -2501,13 +2501,6 @@ main(int argc, char **argv)
 	int c;
 	struct stats stats;
 
-	app_name = argv[0];
-	if (argc == 1)
-	{
-		showhelp();
-		exit(0);
-	}
-
 #if HAVE_GETOPT_LONG
 	struct option longopts[] = {
 	  { "starting-image",	required_argument,	NULL, 'x' },
@@ -2530,8 +2523,12 @@ main(int argc, char **argv)
 	  { 0, 0, 0, 0}
 	} ;
 
+	app_name = argv[0];
+
 	while((c = getopt_long(argc, argv, "x:d:D:b:i:N:m:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
+	app_name = argv[0];
+
 	while((c = getopt(argc, argv,      "x:d:D:b:i:N:m:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
@@ -2593,9 +2590,10 @@ main(int argc, char **argv)
 	}
 
 	if(optind < (argc - 1))
-		error_msg_and_die("Too many arguments. Note: options have changed, see --help or the man page.");
-	if(optind == (argc - 1))
-		fsout = argv[optind];
+		error_msg_and_die("Too many arguments. Try --help or else see the man page.");
+	if(optind > (argc - 1))
+		error_msg_and_die("Not enough arguments. Try --help or else see the man page.");
+	fsout = argv[optind];
 
 	hdlinks.hdl = (struct hdlink_s *)malloc(hdlink_cnt * sizeof(struct hdlink_s));
 	if (!hdlinks.hdl)
