@@ -1542,6 +1542,8 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				continue;
 			}
 		}
+		else
+			nod = 0;
 		switch (type)
 		{
 			case 'd':
@@ -1609,7 +1611,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	DIR *dh;
 	struct dirent *dent;
 	struct stat st;
-	uint8 *b;
+	char *lnk;
 	uint32 save_nod;
 
 	if(!(dh = opendir(".")))
@@ -1682,9 +1684,9 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					nod = mknod_fs(fs, this_nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
-					b = xreadlink(dent->d_name);
-					mklink_fs(fs, this_nod, name, st.st_size, b, uid, gid, ctime, mtime);
-					free(b);
+					lnk = xreadlink(dent->d_name);
+					mklink_fs(fs, this_nod, name, st.st_size, (uint8*)lnk, uid, gid, ctime, mtime);
+					free(lnk);
 					break;
 				case S_IFREG:
 					fh = xfopen(dent->d_name, "r");
@@ -2125,43 +2127,6 @@ write_blocks(filesystem *fs, uint32 nod, FILE* f)
 	}
 }
 
-#if 0
-// hexdumps blocks to a FILE*
-static void
-hexdump_blocks(filesystem *fs, uint32 nod, FILE* f)
-{
-	blockwalker bw;
-	uint32 bk;
-	uint8 *b;
-	int32 fsize = get_nod(fs, nod)->i_size;
-	init_bw(&bw);
-	printf("block: offset: data:                                ascii:\n");
-	while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
-	{
-		int i, j;
-		if(fsize <= 0)
-			error_msg_and_die("wrong size while saving inode %d", nod);
-		b = get_blk(fs, bk);
-		for(i = 0; i < 64; i++)
-		{
-			int dmp = 0;
-			for(j = 0; j < 4; j++)
-				if(*(int32*)&b[i * 16 + j * 4])
-					dmp = 1;
-			if(!dmp)
-				continue;
-			printf("%5d:    %03X:", bk, i * 16);
-			for(j = 0; j < 4; j++)
-				printf(" %08x", *(int32*)&b[i * 16 + j * 4]);
-			printf("  ");
-			for(j = 0; j < 16; j++)
-				printf("%c", (b[i * 16 + j] >= ' ' && b[i * 16 + j] < 127) ? b[i * 16 + j] : ' ');
-			printf("\n");
-		}
-		fsize -= BLOCKSIZE;
-	}
-}
-#endif
 
 // print block/char device minor and major
 static void
@@ -2477,9 +2442,6 @@ main(int argc, char **argv)
 	int nbblocks = -1;
 	int nbinodes = -1;
 	int nbresrvd = -1;
-#if 1
-	int tmp_nbinodes = -1;
-#endif
 	float bytes_per_inode = -1;
 	float reserved_frac = -1;
 	int fs_timestamp = -1;
@@ -2618,7 +2580,6 @@ main(int argc, char **argv)
 		else 
 			nbresrvd = nbblocks * reserved_frac;
 
-#if 1
 		stats.ninodes = EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
 		stats.nblocks = 0;
 
@@ -2629,23 +2590,15 @@ main(int argc, char **argv)
 		else
 			if(stats.ninodes > (unsigned long)nbinodes)
 			{
-				fprintf(stderr, "number of inodes too low, increasing to %d\n",tmp_nbinodes);
+				fprintf(stderr, "number of inodes too low, increasing to %ld\n", stats.ninodes);
 				nbinodes = stats.ninodes;
 			}
 
 		if(bytes_per_inode != -1) {
-			tmp_nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
+			int tmp_nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
 			if(tmp_nbinodes > nbinodes)
 				nbinodes = tmp_nbinodes;
 		}
-#else
-		if(nbinodes == -1) {
-			if(bytes_per_inode == -1)
-				nbinodes = nbblocks / 8;
-			else
-				nbinodes = nbblocks * BLOCKSIZE / bytes_per_inode;
-		}
-#endif
 		if(fs_timestamp == -1)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes, fs_timestamp);

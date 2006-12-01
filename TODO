@@ -3,10 +3,6 @@ Disclaimer: I'll probably never do all this ...
 - support fancy ext2 options
 - support ext3
 
-- add tar.gz extraction capabilities ?
-
-- find a better way to guess filesystem's size
-
 - UUID generation
 
 - mke2fs includes reserved blocks in free blocks, maybe we should too
