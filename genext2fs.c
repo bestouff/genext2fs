@@ -4,6 +4,8 @@
 // ext2 filesystem generator for embedded systems
 // Copyright (C) 2000 Xavier Bestel <xavier.bestel@free.fr>
 //
+// Please direct support requests to genext2fs-devel@lists.sourceforge.net
+//
 // 'du' portions taken from coreutils/du.c in busybox:
 //	Copyright (C) 1999,2000 by Lineo, inc. and John Beppu
 //	Copyright (C) 1999,2000,2001 by John Beppu <beppu@codepoet.org>
