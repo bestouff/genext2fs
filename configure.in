@@ -7,7 +7,7 @@ AC_INIT(genext2fs.c)
 builtin(include, [m4/ac_func_snprintf.m4])dnl
 builtin(include, [m4/ac_func_scanf_can_malloc.m4])dnl
 
-AM_INIT_AUTOMAKE(genext2fs,1.4rc1)
+AM_INIT_AUTOMAKE(genext2fs,1.4)
 AC_CONFIG_HEADER([config.h])
 
 AC_GNU_SOURCE
