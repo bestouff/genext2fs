@@ -19,18 +19,21 @@ AC_DEFUN([AC_FUNC_SCANF_CAN_MALLOC],
 #endif
         ], [
   union { float f; char *p; } u;
+  char *p;
   u.f = 0;
   char *scan_this = "56789";
-  sscanf(scan_this, "%as", &u);
-  if(u.f == (float)56789) return 1;
+  int matched = sscanf(scan_this, "%as", &u);
+  if(matched < 1) return 1; /* shouldn't happens */
+  if(u.f == (float)56789) return 2;
 
-  while(*scan_this && *u.p == *scan_this) {
-    ++u.p;
+  p = u.p;
+  while(*scan_this && *p == *scan_this) {
+    ++p;
     ++scan_this;
   };
   free(u.p);
   if(*scan_this == 0) return 0;
-  return 2;
+  return 3;
         ])
       ],
       [ac_scanf_can_malloc=yes],
