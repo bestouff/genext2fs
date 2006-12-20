@@ -66,7 +66,7 @@ ftest_mount () {
 		grep '^[^	#]*	[bc]' | \
 		awk '{print $1,$4,$5,$6","$7}'| \
 		sort -d -k3.6 > fout
-	ls -aln mnt/dev | \
+	LC_ALL=C ls -aln mnt/dev | \
 		egrep -v "(hda|hdb|tty|loop|ram|ubda)" | \
 		grep ^[bc] | \
 		awk '{ print "/dev/"$10,$3,$4,$5$6}' | \
