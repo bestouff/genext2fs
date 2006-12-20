@@ -35,5 +35,6 @@ AC_CHECK_FUNCS([getopt_long getline strtof])
 AC_FUNC_SNPRINTF
 AC_FUNC_SCANF_CAN_MALLOC
 
-AC_CONFIG_FILES([Makefile])
-AC_OUTPUT
+AC_OUTPUT([Makefile],[
+chmod a+x test-mount.sh  test.sh
+])

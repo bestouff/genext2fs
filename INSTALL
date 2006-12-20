@@ -10,4 +10,4 @@ make install
 
 To run the regression tests:
 
-make test
+make check
