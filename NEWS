@@ -1,4 +1,4 @@
-This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
+This is the 1.4 release. The new features compared to genext2fs 1.3 are:
 
 - long options support
 - support for SI and IEC binary-multiple prefixes for some option values
@@ -9,6 +9,7 @@ This is the 1.4 pre-release. The new features compared to genext2fs 1.3 are:
 - big filesystems (>8MB) support
 - Solaris 2.x and Mac OS X support
 - automatic measurement of the filesystem inode count
+- uClibc support
 
 There are also various bugfixes and an up-to-date manpage.
 
