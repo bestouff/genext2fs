@@ -36,5 +36,5 @@ AC_FUNC_SNPRINTF
 AC_FUNC_SCANF_CAN_MALLOC
 
 AC_OUTPUT([Makefile],[
-chmod a+x test-mount.sh  test.sh
+chmod a+x $ac_top_srcdir/test-mount.sh $ac_top_srcdir/test.sh
 ])
