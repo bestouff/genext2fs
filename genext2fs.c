@@ -1691,7 +1691,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					free(lnk);
 					break;
 				case S_IFREG:
-					fh = xfopen(dent->d_name, "r");
+					fh = xfopen(dent->d_name, "rb");
 					nod = mkfile_fs(fs, this_nod, name, mode, st.st_size, fh, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
@@ -2378,7 +2378,7 @@ populate_fs(filesystem *fs, char **dopt, int didx, int squash_uids, int squash_p
 		switch(st.st_mode & S_IFMT)
 		{
 			case S_IFREG:
-				fh = xfopen(dopt[i], "r");
+				fh = xfopen(dopt[i], "rb");
 				add2fs_from_file(fs, nod, fh, fs_timestamp, stats);
 				fclose(fh);
 				break;
@@ -2568,7 +2568,7 @@ main(int argc, char **argv)
 	{
 		if(strcmp(fsin, "-"))
 		{
-			FILE * fh = xfopen(fsin, "r");
+			FILE * fh = xfopen(fsin, "rb");
 			fs = load_fs(fh, bigendian);
 			fclose(fh);
 		}
@@ -2627,14 +2627,14 @@ main(int argc, char **argv)
 		while((p = strchr(gopt[i], '/')))
 			*p = '_';
 		SNPRINTF(fname, MAX_FILENAME-1, "%s.blk", gopt[i]);
-		fh = xfopen(fname, "w");
+		fh = xfopen(fname, "wb");
 		fprintf(fh, "%d:", get_nod(fs, nod)->i_size);
 		flist_blocks(fs, nod, fh);
 		fclose(fh);
 	}
 	if(strcmp(fsout, "-"))
 	{
-		FILE * fh = xfopen(fsout, "w");
+		FILE * fh = xfopen(fsout, "wb");
 		dump_fs(fs, fh, bigendian);
 		fclose(fh);
 	}
