@@ -60,6 +60,12 @@
 # include <sys/types.h>
 #endif
 
+#if MAJOR_IN_MKDEV
+# include <sys/mkdev.h>
+#elif MAJOR_IN_SYSMACROS
+# include <sys/sysmacros.h>
+#endif
+
 #if HAVE_SYS_STAT_H
 # include <sys/stat.h>
 #endif
@@ -1673,10 +1679,10 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			{
 #if HAVE_STRUCT_STAT_ST_RDEV
 				case S_IFCHR:
-					nod = mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFCHR, uid, gid, major(st.st_rdev), minor(st.st_rdev), ctime, mtime);
 					break;
 				case S_IFBLK:
-					nod = mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, st.st_rdev >> 8, st.st_rdev & 0xff, ctime, mtime);
+					nod = mknod_fs(fs, this_nod, name, mode|FM_IFBLK, uid, gid, major(st.st_rdev), minor(st.st_rdev), ctime, mtime);
 					break;
 #endif
 				case S_IFIFO:
