@@ -1557,7 +1557,6 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 		{
 			case 'd':
 				mode |= FM_IFDIR;
-				changeonly = 1;
 				break;
 			case 'f':
 				mode |= FM_IFREG;
