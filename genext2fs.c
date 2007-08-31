@@ -1504,7 +1504,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 	char *c, type, *path = NULL, *path2 = NULL, *dir, *name, *line = NULL;
 	size_t len;
 	struct stat st;
-	int nbargs, lineno = 0;
+	int nbargs, changeonly, lineno = 0;
 
 	fstat(fileno(fh), &st);
 	ctime = fs_timestamp;
@@ -1552,13 +1552,16 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 		}
 		else
 			nod = 0;
+		changeonly = 0;
 		switch (type)
 		{
 			case 'd':
 				mode |= FM_IFDIR;
+				changeonly = 1;
 				break;
 			case 'f':
 				mode |= FM_IFREG;
+				changeonly = 1;
 				break;
 			case 'p':
 				mode |= FM_IFIFO;
@@ -1592,12 +1595,20 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				for(i = start; i < count; i++)
 				{
 					SNPRINTF(dname, len, "%s%lu", name, i);
-					mknod_fs(fs, nod, dname, mode, uid, gid, major, minor + (i * increment - start), ctime, mtime);
+					if(changeonly && !find_dir(fs, nod, dname))
+						error_msg("device table line %d skipped: trying to change non-existing entry '%s'", lineno, dname);
+					else
+						mknod_fs(fs, nod, dname, mode, uid, gid, major, minor + (i * increment - start), ctime, mtime);
 				}
 				free(dname);
 			}
 			else
-				mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
+			{
+				if(changeonly && !find_dir(fs, nod, name))
+					error_msg("device table line %d skipped: trying to change non-existing entry '%s'", lineno, name);
+				else
+					mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
+			}
 		}
 	}
 	if (line)
