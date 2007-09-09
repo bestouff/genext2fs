@@ -1596,7 +1596,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				{
 					uint32 oldnod;
 					SNPRINTF(dname, len, "%s%lu", name, i);
-					oldnod = find_path(fs, nod, dname);
+					oldnod = find_dir(fs, nod, dname);
 					if(oldnod)
 						chmod_fs(fs, oldnod, mode, uid, gid);
 					else
@@ -1606,7 +1606,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			}
 			else
 			{
-				uint32 oldnod = find_path(fs, nod, name);
+				uint32 oldnod = find_dir(fs, nod, name);
 				if(oldnod)
 					chmod_fs(fs, oldnod, mode, uid, gid);
 				else
@@ -1678,7 +1678,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			}
 		else
 		{
-			if((nod = find_path(fs, this_nod, name)))
+			if((nod = find_dir(fs, this_nod, name)))
 			{
 				error_msg("ignoring duplicate entry %s", name);
 				if((st.st_mode & S_IFMT) == S_IFDIR)
