@@ -1362,7 +1362,7 @@ chmod_fs(filesystem *fs, uint32 nod, uint16 mode, uint16 uid, uint16 gid)
 {
 	inode *node;
 	node = get_nod(fs, nod);
-	node->i_mode = (node->i_mode & ~FM_IFMT) | (mode & FM_IFMT);
+	node->i_mode = (node->i_mode & ~FM_IMASK) | (mode & FM_IMASK);
 	node->i_uid = uid;
 	node->i_gid = gid;
 }
@@ -1678,9 +1678,11 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			}
 		else
 		{
-			if(find_path(fs, this_nod, name))
+			if((nod = find_path(fs, this_nod, name)))
 			{
 				error_msg("ignoring duplicate entry %s", name);
+				if((st.st_mode & S_IFMT) == S_IFDIR)
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
 				continue;
 			}
 			save_nod = 0;
