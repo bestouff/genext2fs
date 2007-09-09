@@ -778,7 +778,7 @@ is_hardlink(ino_t inode)
 		if(hdlinks.hdl[i].src_inode == inode)
 			return i;
 	}
-	return -1;		
+	return -1;
 }
 
 // printf helper macro
@@ -1356,20 +1356,23 @@ find_path(filesystem *fs, uint32 nod, const char * name)
 	return nod;
 }
 
+// chmod an inode
+void
+chmod_fs(filesystem *fs, uint32 nod, uint16 mode, uint16 uid, uint16 gid)
+{
+	inode *node;
+	node = get_nod(fs, nod);
+	node->i_mode = (node->i_mode & ~FM_IFMT) | (mode & FM_IFMT);
+	node->i_uid = uid;
+	node->i_gid = gid;
+}
+
 // create a simple inode
 static uint32
 mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint16 mode, uint16 uid, uint16 gid, uint8 major, uint8 minor, uint32 ctime, uint32 mtime)
 {
 	uint32 nod;
 	inode *node;
-	if((nod = find_dir(fs, parent_nod, name)))
-	{
-		node = get_nod(fs, nod);
-		if((node->i_mode & FM_IFMT) != (mode & FM_IFMT))
-			error_msg_and_die("node '%s' already exists and isn't of the same type", name);
-		node->i_mode = mode;
-	}
-	else
 	{
 		nod = alloc_nod(fs);
 		node = get_nod(fs, nod);
@@ -1504,7 +1507,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 	char *c, type, *path = NULL, *path2 = NULL, *dir, *name, *line = NULL;
 	size_t len;
 	struct stat st;
-	int nbargs, changeonly, lineno = 0;
+	int nbargs, lineno = 0;
 
 	fstat(fileno(fh), &st);
 	ctime = fs_timestamp;
@@ -1552,7 +1555,6 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 		}
 		else
 			nod = 0;
-		changeonly = 0;
 		switch (type)
 		{
 			case 'd':
@@ -1560,7 +1562,6 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				break;
 			case 'f':
 				mode |= FM_IFREG;
-				changeonly = 1;
 				break;
 			case 'p':
 				mode |= FM_IFIFO;
@@ -1593,9 +1594,11 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				dname = malloc(len + 1);
 				for(i = start; i < count; i++)
 				{
+					uint32 oldnod;
 					SNPRINTF(dname, len, "%s%lu", name, i);
-					if(changeonly && !find_dir(fs, nod, dname))
-						error_msg("device table line %d skipped: trying to change non-existing entry '%s'", lineno, dname);
+					oldnod = find_path(fs, nod, dname);
+					if(oldnod)
+						chmod_fs(fs, oldnod, mode, uid, gid);
 					else
 						mknod_fs(fs, nod, dname, mode, uid, gid, major, minor + (i * increment - start), ctime, mtime);
 				}
@@ -1603,8 +1606,9 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			}
 			else
 			{
-				if(changeonly && !find_dir(fs, nod, name))
-					error_msg("device table line %d skipped: trying to change non-existing entry '%s'", lineno, name);
+				uint32 oldnod = find_path(fs, nod, name);
+				if(oldnod)
+					chmod_fs(fs, oldnod, mode, uid, gid);
 				else
 					mknod_fs(fs, nod, name, mode, uid, gid, major, minor, ctime, mtime);
 			}
@@ -1674,6 +1678,11 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			}
 		else
 		{
+			if(find_path(fs, this_nod, name))
+			{
+				error_msg("ignoring duplicate entry %s", name);
+				continue;
+			}
 			save_nod = 0;
 			/* Check for hardlinks */
 			if (!S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_nlink > 1) {
@@ -2004,7 +2013,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 		//system blocks
 		for(j = 1; j <= overhead_per_group; j++)
 			allocate(bbm, j); 
-		
+
 		/* Inode bitmap */
 		ibm = get_blk(fs,fs->gd[i].bg_inode_bitmap);	
 		//non-filesystem inodes
