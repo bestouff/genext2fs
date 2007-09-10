@@ -7,6 +7,7 @@ for f in \
 	aclocal.m4* autom4te.cache \
 	configure config.* \
 	depcomp install-sh ltmain.sh missing mkinstalldirs libtool \
+	stamp-h1 \
 	genext2fs
 do
 	rm -rf $f
