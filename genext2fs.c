@@ -1681,8 +1681,12 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			if((nod = find_dir(fs, this_nod, name)))
 			{
 				error_msg("ignoring duplicate entry %s", name);
-				if((st.st_mode & S_IFMT) == S_IFDIR)
+				if(S_ISDIR(st.st_mode)) {
+					if(chdir(dent->d_name) < 0)
+						perror_msg_and_die(name);
 					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+					chdir("..");
+				}
 				continue;
 			}
 			save_nod = 0;
