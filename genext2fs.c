@@ -286,7 +286,9 @@ typedef unsigned int uint32;
 // older solaris. Note that this is still not very portable, in that
 // the return value cannot be trusted.
 
-#if SCANF_CAN_MALLOC
+#if 0 // SCANF_CAN_MALLOC
+// C99 define "a" for floating point, so you can have runtime surprise
+// according the library versions
 # define SCANF_PREFIX "a"
 # define SCANF_STRING(s) (&s)
 #else
