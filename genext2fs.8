@@ -48,8 +48,9 @@ the root).
 Use \fBspec-file\fP to specify inodes to be added, at the given
 path (by default the root), including files, directories and
 special files like devices.
-If the specified files are already present in the image, their
-ownership and permission modes will be adjusted accordingly.
+If the specified files are already present in the image, their ownership
+and permission modes will be adjusted accordingly (this can only occur 
+when the -D option appears after the options that create the specified files).
 Furthermore, you can use a single table entry to create many devices
 with a range of minor numbers (see examples below).
 All specified inodes receive the mtime of \fBspec-file\fP itself.
