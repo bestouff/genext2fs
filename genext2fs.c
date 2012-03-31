@@ -1420,9 +1420,10 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO, uid, gid, 0, 0, ctime, mtime);
 	extend_blk(fs, nod, 0, - (int)get_nod(fs, nod)->i_blocks / INOBLK);
 	get_nod(fs, nod)->i_size = size;
-	if(size <= 4 * (EXT2_TIND_BLOCK+1))
+	if(size < 4 * (EXT2_TIND_BLOCK+1))
 	{
 		strncpy((char*)get_nod(fs, nod)->i_block, (char*)b, size);
+		((char*)get_nod(fs, nod)->i_block)[size+1] = '\0';
 		return nod;
 	}
 	extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
@@ -1659,6 +1660,10 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			switch(st.st_mode & S_IFMT)
 			{
 				case S_IFLNK:
+					if((st.st_mode & S_IFMT) == S_IFREG || st.st_size >= 4 * (EXT2_TIND_BLOCK+1))
+						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->ninodes++;
+					break;
 				case S_IFREG:
 					if((st.st_mode & S_IFMT) == S_IFREG || st.st_size > 4 * (EXT2_TIND_BLOCK+1))
 						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
