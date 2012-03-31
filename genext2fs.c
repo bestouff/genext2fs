@@ -571,16 +571,15 @@ typedef struct
 
 
 /* Filesystem structure that support groups */
-#if BLOCKSIZE == 1024
 typedef struct
 {
-	block zero;            // The famous block 0
-	superblock sb;         // The superblock
+	uint8 zero[1024];      // Room for bootloader stuff
+	superblock sb;         // The superblock, always at 1024
+#if BLOCKSIZE > 2048
+	uint8 zero2[BLOCKSIZE - 2048]; // align group descriptor on block size
+#endif
 	groupdescriptor gd[0]; // The group descriptors
 } filesystem;
-#else
-#error UNHANDLED BLOCKSIZE
-#endif
 
 // now the endianness swap
 
@@ -886,7 +885,7 @@ alloc_blk(filesystem *fs, uint32 nod)
 		error_msg_and_die("group descr %d. free blocks count == 0 (corrupted fs?)",grp);
 	if(!(fs->sb.s_free_blocks_count--))
 		error_msg_and_die("superblock free blocks count == 0 (corrupted fs?)");
-	return fs->sb.s_blocks_per_group*grp + bk;
+	return fs->sb.s_first_data_block + fs->sb.s_blocks_per_group*grp + (bk-1);
 }
 
 // free a block
@@ -1951,10 +1950,14 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	 */
 	min_nbgroups = (nbinodes + INODES_PER_GROUP - 1) / INODES_PER_GROUP;
 
+	/* On filesystems with 1k block size, the bootloader area uses a full
+	 * block. For 2048 and up, the superblock can be fitted into block 0.
+	 */
+	first_block = (BLOCKSIZE == 1024);
+
 	/* nbblocks is the total number of blocks in the filesystem.
 	 * a block group can have no more than 8192 blocks.
 	 */
-	first_block = (BLOCKSIZE == 1024);
 	nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
 	if(nbgroups < min_nbgroups) nbgroups = min_nbgroups;
 	nbblocks_per_group = rndup((nbblocks - first_block + nbgroups - 1)/nbgroups, 8);
@@ -1966,10 +1969,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	gdsz = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
 	itblsz = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
 	overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
-	if((uint32)nbblocks - 1 < overhead_per_group * nbgroups)
-		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
-	free_blocks = nbblocks - overhead_per_group*nbgroups - 1 /*boot block*/;
+	free_blocks = nbblocks - overhead_per_group*nbgroups - first_block;
 	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
+	if(free_blocks < 0)
+		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 
 	if(!(fs = (filesystem*)calloc(nbblocks, BLOCKSIZE)))
 		error_msg_and_die("not enough memory for filesystem");
@@ -1991,7 +1994,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes, uint32 fs_timestamp
 	fs->sb.s_lastcheck = fs_timestamp;
 
 	// set up groupdescriptors
-	for(i=0, bbmpos=gdsz+2, ibmpos=bbmpos+1, itblpos=ibmpos+1;
+	for(i=0, bbmpos=first_block+1+gdsz, ibmpos=bbmpos+1, itblpos=ibmpos+1;
 		i<nbgroups;
 		i++, bbmpos+=nbblocks_per_group, ibmpos+=nbblocks_per_group, itblpos+=nbblocks_per_group)
 	{
