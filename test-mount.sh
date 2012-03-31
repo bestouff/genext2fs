@@ -33,9 +33,9 @@ pass () {
 # and returns the command line with which to invoke dtest()
 # Usage: dtest-mount file-size number-of-blocks 
 dtest_mount () {
-	size=$1; blocks=$2
-	echo Testing with file of size $size
-	dgen $size $blocks
+	size=$1; blocks=$2; blocksz=$3;
+	echo Testing $blocks blocks of $blocksz bytes with file of size $size
+	dgen $size $blocks $blocksz
 	/sbin/e2fsck -fn ext2.img || fail
 	mkdir -p mnt
 	mount -t ext2 -o ro,loop ext2.img mnt || fail
@@ -44,7 +44,7 @@ dtest_mount () {
 	                                awk '{print $5}'`" ] ; then
 		fail
 	fi
-	pass dtest $size $blocks
+	pass dtest $size $blocks $blocksz
 }
 
 # ftest-mount - Exercise the -f spec-file option of genext2fs
@@ -75,13 +75,21 @@ ftest_mount () {
 	pass ftest $fname $blocks
 }
 
-dtest_mount 0 4096 
-dtest_mount 0 8193
-dtest_mount 0 8194
-dtest_mount 1 4096 
-dtest_mount 12288 4096 
-dtest_mount 274432 4096 
-dtest_mount 8388608 9000 
-dtest_mount 16777216 20000
+dtest_mount 0 4096 1024
+dtest_mount 0 2048 2048
+dtest_mount 0 1024 4096
+dtest_mount 0 8193 1024
+dtest_mount 0 8194 1024
+dtest_mount 0 8193 4096
+dtest_mount 0 8194 2048
+dtest_mount 1 4096 1024
+dtest_mount 1 1024 4096
+dtest_mount 12288 4096 1024
+dtest_mount 274432 4096 1024
+dtest_mount 8388608 9000 1024
+dtest_mount 8388608 4500 2048
+dtest_mount 8388608 2250 4096
+dtest_mount 16777216 20000 1024
+dtest_mount 16777216 10000 2048
 
 ftest_mount device_table.txt 4096 
