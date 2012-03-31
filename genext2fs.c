@@ -107,10 +107,8 @@
 
 #if HAVE_DIRENT_H
 # include <dirent.h>
-# define NAMLEN(dirent) strlen((dirent)->d_name)
 #else
 # define dirent direct
-# define NAMLEN(dirent) (dirent)->d_namlen
 # if HAVE_SYS_NDIR_H
 #  include <sys/ndir.h>
 # endif
@@ -1480,7 +1478,8 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size
 		if(!(b = (uint8*)calloc(rndup(size, BLOCKSIZE), 1)))
 			error_msg_and_die("not enough mem to read file '%s'", name);
 		if(f)
-			fread(b, size, 1, f); // FIXME: ugly. use mmap() ...
+			if (fread(b, size, 1, f) != 1) // FIXME: ugly. use mmap() ...
+				error_msg_and_die("fread failed");
 		extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
 		free(b);
 	}
@@ -1716,7 +1715,9 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
 					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, fs_timestamp, stats);
-					chdir("..");
+					if (chdir("..") == -1)
+						perror_msg_and_die("..");
+
 					break;
 				default:
 					break;
@@ -1730,7 +1731,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
 					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
-					chdir("..");
+					if (chdir("..") == -1)
+						perror_msg_and_die("..");
 				}
 				continue;
 			}
@@ -1776,7 +1778,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
 					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
-					chdir("..");
+					if (chdir("..") == -1)
+						perror_msg_and_die("..");
 					break;
 				default:
 					error_msg("ignoring entry %s", name);
