@@ -2464,6 +2464,7 @@ showhelp(void)
 	"  -x, --starting-image <image>\n"
 	"  -d, --root <directory>\n"
 	"  -D, --devtable <file>\n"
+	"  -B, --block-size <bytes>\n"
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
 	"  -N, --number-of-inodes <number of inodes>\n"
@@ -2521,6 +2522,7 @@ main(int argc, char **argv)
 	  { "starting-image",	required_argument,	NULL, 'x' },
 	  { "root",		required_argument,	NULL, 'd' },
 	  { "devtable",		required_argument,	NULL, 'D' },
+	  { "block-size",	required_argument,	NULL, 'B' },
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
 	  { "number-of-inodes",	required_argument,	NULL, 'N' },
@@ -2540,11 +2542,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:b:i:N:m:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:B:b:i:N:m:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:b:i:N:m:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:B:b:i:N:m:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -2554,6 +2556,9 @@ main(int argc, char **argv)
 			case 'd':
 			case 'D':
 				dopt[didx++] = optarg;
+				break;
+			case 'B':
+				blocksize = SI_atof(optarg);
 				break;
 			case 'b':
 				nbblocks = SI_atof(optarg);
@@ -2609,6 +2614,9 @@ main(int argc, char **argv)
 	if(optind > (argc - 1))
 		error_msg_and_die("Not enough arguments. Try --help or else see the man page.");
 	fsout = argv[optind];
+
+	if(blocksize != 1024 && blocksize != 2048 && blocksize != 4096)
+		error_msg_and_die("Valid block sizes: 1024, 2048 or 4096.");
 
 	hdlinks.hdl = (struct hdlink_s *)malloc(hdlink_cnt * sizeof(struct hdlink_s));
 	if (!hdlinks.hdl)
