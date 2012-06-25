@@ -850,9 +850,9 @@ get_blk(filesystem *fs, uint32 blk)
 
 // the group descriptors are aligned on the block size
 static inline groupdescriptor *
-get_gd(filesystem *fs, int no)
+get_gd(filesystem *fs, uint32 no)
 {
-	int gdblk = (sizeof (filesystem) + BLOCKSIZE - 1) / BLOCKSIZE;
+	uint32 gdblk = (sizeof (filesystem) + BLOCKSIZE - 1) / BLOCKSIZE;
 	return ((groupdescriptor *) get_blk(fs, gdblk)) + no;
 }
 
@@ -860,7 +860,7 @@ get_gd(filesystem *fs, int no)
 static inline inode *
 get_nod(filesystem *fs, uint32 nod)
 {
-	int grp,offset;
+	uint32 grp,offset;
 	inode *itab;
 
 	offset = GRP_IBM_OFFSET(fs,nod);
