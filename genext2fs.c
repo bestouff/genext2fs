@@ -617,12 +617,26 @@ typedef struct
 	uint32 bptind;
 } blockwalker;
 
+#define HDLINK_CNT   16
+struct hdlink_s
+{
+	uint32	src_inode;
+	uint32	dst_nod;
+};
+
+struct hdlinks_s
+{
+	int32 count;
+	struct hdlink_s *hdl;
+};
 
 /* Filesystem structure that support groups */
 typedef struct
 {
 	uint8 *data;
 	superblock *sb;
+	int32 hdlink_cnt;
+	struct hdlinks_s hdlinks;
 } filesystem;
 
 // now the endianness swap
@@ -642,22 +656,6 @@ typedef struct
 #define decl32(x) this->x = swab32(this->x);
 #define udecl32(x) this->x = swab32(this->x);
 #define utdecl32(x,n) { int i; for(i=0; i<n; i++) this->x[i] = swab32(this->x[i]); }
-
-#define HDLINK_CNT   16
-static int32 hdlink_cnt = HDLINK_CNT;
-struct hdlink_s
-{
-	uint32	src_inode;
-	uint32	dst_nod;
-};
-
-struct hdlinks_s 
-{
-	int32 count;
-	struct hdlink_s *hdl;
-};
-
-static struct hdlinks_s hdlinks;
 
 static void
 swap_sb(superblock *sb)
@@ -815,12 +813,12 @@ xreadlink(const char *path)
 }
 
 int
-is_hardlink(ino_t inode)
+is_hardlink(filesystem *fs, ino_t inode)
 {
 	int i;
 
-	for(i = 0; i < hdlinks.count; i++) {
-		if(hdlinks.hdl[i].src_inode == inode)
+	for(i = 0; i < fs->hdlinks.count; i++) {
+		if(fs->hdlinks.hdl[i].src_inode == inode)
 			return i;
 	}
 	return -1;
@@ -2076,9 +2074,9 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			save_nod = 0;
 			/* Check for hardlinks */
 			if (!S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_nlink > 1) {
-				int32 hdlink = is_hardlink(st.st_ino);
+				int32 hdlink = is_hardlink(fs, st.st_ino);
 				if (hdlink >= 0) {
-					add2dir(fs, this_nod, hdlinks.hdl[hdlink].dst_nod, name);
+					add2dir(fs, this_nod, fs->hdlinks.hdl[hdlink].dst_nod, name);
 					continue;
 				} else {
 					save_nod = 1;
@@ -2122,17 +2120,17 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					error_msg("ignoring entry %s", name);
 			}
 			if (save_nod) {
-				if (hdlinks.count == hdlink_cnt) {
-					if ((hdlinks.hdl = 
-						 realloc (hdlinks.hdl, (hdlink_cnt + HDLINK_CNT) *
+				if (fs->hdlinks.count == fs->hdlink_cnt) {
+					if ((fs->hdlinks.hdl =
+						 realloc (fs->hdlinks.hdl, (fs->hdlink_cnt + HDLINK_CNT) *
 								  sizeof (struct hdlink_s))) == NULL) {
 						error_msg_and_die("Not enough memory");
 					}
-					hdlink_cnt += HDLINK_CNT;
+					fs->hdlink_cnt += HDLINK_CNT;
 				}
-				hdlinks.hdl[hdlinks.count].src_inode = st.st_ino;
-				hdlinks.hdl[hdlinks.count].dst_nod = nod;
-				hdlinks.count++;
+				fs->hdlinks.hdl[fs->hdlinks.count].src_inode = st.st_ino;
+				fs->hdlinks.hdl[fs->hdlinks.count].dst_nod = nod;
+				fs->hdlinks.count++;
 			}
 		}
 	}
@@ -2399,6 +2397,11 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 		error_msg_and_die("not enough memory for filesystem");
 	if(!(fs->data = calloc(nbblocks, BLOCKSIZE)))
 		error_msg_and_die("not enough memory for filesystem");
+	fs->hdlink_cnt = HDLINK_CNT;
+	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
+	if (!fs->hdlinks.hdl)
+		error_msg_and_die("Not enough memory");
+	fs->hdlinks.count = 0 ;
 	/* Always 1024 off, blocksize can vary. */
 	fs->sb = (superblock *) (fs->data + 1024);
 
@@ -2549,11 +2552,17 @@ load_fs(FILE * fh, int swapit)
 	fs = malloc(sizeof(*fs));
 	if (!fs)
 		error_msg_and_die("not enough memory for filesystem");
+	fs->hdlink_cnt = HDLINK_CNT;
+	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
+	if (!fs->hdlinks.hdl)
+		error_msg_and_die("Not enough memory");
+	fs->hdlinks.count = 0 ;
 	if(!(fs->data = calloc(fssize, BLOCKSIZE)))
 		error_msg_and_die("not enough memory for filesystem");
 	if(fread(fs->data, BLOCKSIZE, fssize, fh) != fssize)
 		perror_msg_and_die("input filesystem image");
 	fs->sb = (superblock *) (fs->data + BLOCKSIZE);
+
 	if(swapit)
 		swap_badfs(fs);
 	if(fs->sb->s_rev_level || (fs->sb->s_magic != EXT2_MAGIC_NUMBER))
@@ -2564,6 +2573,7 @@ load_fs(FILE * fh, int swapit)
 static void
 free_fs(filesystem *fs)
 {
+	free(fs->hdlinks.hdl);
 	free(fs->data);
 	free(fs);
 }
@@ -3105,11 +3115,6 @@ main(int argc, char **argv)
 		error_msg_and_die("Valid block sizes: 1024, 2048 or 4096.");
 	if(creator_os < 0)
 		error_msg_and_die("Creator OS unknown.");
-
-	hdlinks.hdl = (struct hdlink_s *)malloc(hdlink_cnt * sizeof(struct hdlink_s));
-	if (!hdlinks.hdl)
-		error_msg_and_die("Not enough memory");
-	hdlinks.count = 0 ;
 
 	if(fsin)
 	{
