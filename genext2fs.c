@@ -2083,19 +2083,30 @@ fs_upgrade_rev1_largefile(filesystem *fs)
 
 // make a file from a FILE*
 static uint32
-mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, off_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint8 * b;
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
+	off_t size = 0;
 	size_t readbytes;
 	inode_pos ipos;
+	int fullsize;
 
 	b = malloc(CB_SIZE);
 	if (!b)
 		error_msg_and_die("mkfile_fs: out of memory");
 	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
+	readbytes = fread(b, 1, CB_SIZE, f);
+	while (readbytes) {
+		fullsize = rndup(readbytes, BLOCKSIZE);
+		// Fill to end of block with zeros.
+		memset(b + readbytes, 0, fullsize - readbytes);
+		extend_inode_blk(fs, &ipos, b, fullsize / BLOCKSIZE);
+		size += readbytes;
+		readbytes = fread(b, 1, CB_SIZE, f);
+	}
 	if (size > 0x7fffffff) {
 		if (fs->sb->s_rev_level < 1)
 			fs_upgrade_rev1_largefile(fs);
@@ -2103,15 +2114,6 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, off_
 	}
 	node->i_dir_acl = size >> 32;
 	node->i_size = size;
-	while (size) {
-		readbytes = fread(b, 1, CB_SIZE, f);
-		if ((size < CB_SIZE && readbytes != size)
-		    || (size >= CB_SIZE && readbytes != CB_SIZE))
-			error_msg_and_die("fread failed");
-		extend_inode_blk(fs, &ipos, b,
-				 rndup(readbytes, BLOCKSIZE) / BLOCKSIZE);
-		size -= readbytes;
-	}
 	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
 	free(b);
@@ -2401,8 +2403,12 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					free(lnk);
 					break;
 				case S_IFREG:
-					fh = xfopen(dent->d_name, "rb");
-					nod = mkfile_fs(fs, this_nod, name, mode, st.st_size, fh, uid, gid, ctime, mtime);
+					fh = fopen(dent->d_name, "rb");
+					if (!fh) {
+						error_msg("Unable to open file %s", dent->d_name);
+						break;
+					}
+					nod = mkfile_fs(fs, this_nod, name, mode, fh, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:
