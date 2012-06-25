@@ -3194,7 +3194,7 @@ lookup_creator_os(const char *name)
 int
 main(int argc, char **argv)
 {
-	int nbblocks = -1;
+	long long nbblocks = -1;
 	int nbinodes = -1;
 	int nbresrvd = -1;
 	float bytes_per_inode = -1;
