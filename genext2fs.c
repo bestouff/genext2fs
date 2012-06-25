@@ -2684,28 +2684,25 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	inode_pos_finish(fs, &ipos);
 	put_dir(&dw);
 
-	// make lost+found directory and reserve blocks
+	// make lost+found directory
 	if(fs->sb->s_r_blocks_count)
 	{
 		inode *node;
 		uint8 *b;
 
-		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU, 0, 0, fs_timestamp, fs_timestamp);
+		nod = mkdir_fs(fs, EXT2_ROOT_INO, "lost+found", FM_IRWXU,
+			       0, 0, fs_timestamp, fs_timestamp);
 		b = get_workblk();
 		memset(b, 0, BLOCKSIZE);
 		((directory*)b)->d_rec_len = BLOCKSIZE;
-		/* We run into problems with e2fsck if directory lost+found grows
-		 * bigger than this. Need to find out why this happens - sundar
-		 */
-		if (fs->sb->s_r_blocks_count > fs->sb->s_blocks_count * MAX_RESERVED_BLOCKS )
-			fs->sb->s_r_blocks_count = fs->sb->s_blocks_count * MAX_RESERVED_BLOCKS;
 		inode_pos_init(fs, &ipos, nod, INODE_POS_EXTEND, NULL);
-		for(i = 1; i < fs->sb->s_r_blocks_count; i++)
+		// It is always 16 blocks to start out with
+		for(i = 1; i < 16; i++)
 			extend_inode_blk(fs, &ipos, b, 1);
 		inode_pos_finish(fs, &ipos);
 		free_workblk(b);
 		node = get_nod(fs, nod, &ni);
-		node->i_size = fs->sb->s_r_blocks_count * BLOCKSIZE;
+		node->i_size = 16 * BLOCKSIZE;
 		put_nod(ni);
 	}
 
