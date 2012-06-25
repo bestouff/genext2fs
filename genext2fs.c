@@ -3211,6 +3211,7 @@ main(int argc, char **argv)
 	int squash_perms = 0;
 	uint16 endian = 1;
 	int bigendian = !*(char*)&endian;
+	char *volumelabel = NULL;
 	filesystem *fs;
 	int i;
 	int c;
@@ -3225,6 +3226,7 @@ main(int argc, char **argv)
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
 	  { "number-of-inodes",	required_argument,	NULL, 'N' },
+	  { "volume-label",     required_argument,      NULL, 'L' },
 	  { "reserved-percentage", required_argument,	NULL, 'm' },
 	  { "creator-os",	required_argument,	NULL, 'o' },
 	  { "block-map",	required_argument,	NULL, 'g' },
@@ -3242,11 +3244,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:B:b:i:N:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:B:b:i:N:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:B:b:i:N:m:o:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:B:b:i:N:L:m:o:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -3268,6 +3270,9 @@ main(int argc, char **argv)
 				break;
 			case 'N':
 				nbinodes = SI_atof(optarg);
+				break;
+			case 'L':
+				volumelabel = optarg;
 				break;
 			case 'm':
 				reserved_frac = SI_atof(optarg) / 100;
@@ -3365,6 +3370,9 @@ main(int argc, char **argv)
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes,
 			     fs_timestamp, creator_os, bigendian, fsout);
 	}
+	if (volumelabel != NULL)
+		strncpy((char *)fs->sb->s_volume_name, volumelabel,
+			sizeof(fs->sb->s_volume_name));
 	
 	populate_fs(fs, dopt, didx, squash_uids, squash_perms, fs_timestamp, NULL);
 
