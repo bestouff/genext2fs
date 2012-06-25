@@ -270,10 +270,6 @@ static int blocksize = 1024;
 #define FM_IWOTH   0000002	// write
 #define FM_IXOTH   0000001	// execute
 
-// options
-
-#define OP_HOLES     0x01       // make files with holes
-
 /* Defines for accessing group details */
 
 // Number of groups in the filesystem
@@ -522,7 +518,22 @@ is_blk_empty(uint8 *b)
 	udecl32(s_creator_os)          /* Indicator of which OS created the filesystem */ \
 	udecl32(s_rev_level)           /* The revision level of the filesystem */ \
 	udecl16(s_def_resuid)          /* The default uid for reserved blocks */ \
-	udecl16(s_def_resgid)          /* The default gid for reserved blocks */
+	udecl16(s_def_resgid)          /* The default gid for reserved blocks */ \
+	/* rev 1 version fields start here */ \
+	udecl32(s_first_ino) 		/* First non-reserved inode */	\
+	udecl16(s_inode_size) 		/* size of inode structure */	\
+	udecl16(s_block_group_nr) 	/* block group # of this superblock */ \
+	udecl32(s_feature_compat) 	/* compatible feature set */	\
+	udecl32(s_feature_incompat) 	/* incompatible feature set */	\
+	udecl32(s_feature_ro_compat) 	/* readonly-compatible feature set */ \
+	utdecl8(s_uuid,16)		/* 128-bit uuid for volume */	\
+	utdecl8(s_volume_name,16) 	/* volume name */		\
+	utdecl8(s_last_mounted,64) 	/* directory where last mounted */ \
+	udecl32(s_algorithm_usage_bitmap) /* For compression */
+
+#define EXT2_GOOD_OLD_FIRST_INO	11
+#define EXT2_GOOD_OLD_INODE_SIZE 128
+#define EXT2_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 
 #define groupdescriptor_decl \
 	udecl32(bg_block_bitmap)       /* Block number of the block bitmap */ \
@@ -562,6 +573,7 @@ is_blk_empty(uint8 *b)
 
 #define decl8(x) int8 x;
 #define udecl8(x) uint8 x;
+#define utdecl8(x,n) uint8 x[n];
 #define decl16(x) int16 x;
 #define udecl16(x) uint16 x;
 #define decl32(x) int32 x;
@@ -571,7 +583,7 @@ is_blk_empty(uint8 *b)
 typedef struct
 {
 	superblock_decl
-	uint32 s_reserved[235];       // Reserved
+	uint32 s_reserved[205];       // Reserved
 } superblock;
 
 typedef struct
@@ -650,6 +662,8 @@ typedef struct
 	int32 hdlink_cnt;
 	struct hdlinks_s hdlinks;
 
+	int holes;
+
 	listcache blks;
 	listcache gds;
 	listcache inodes;
@@ -660,6 +674,7 @@ typedef struct
 
 #undef decl8
 #undef udecl8
+#undef utdecl8
 #undef decl16
 #undef udecl16
 #undef decl32
@@ -668,6 +683,7 @@ typedef struct
 
 #define decl8(x)
 #define udecl8(x)
+#define utdecl8(x,n)
 #define decl16(x) this->x = swab16(this->x);
 #define udecl16(x) this->x = swab16(this->x);
 #define decl32(x) this->x = swab32(this->x);
@@ -732,6 +748,7 @@ swap_block(block b)
 
 #undef decl8
 #undef udecl8
+#undef utdecl8
 #undef decl16
 #undef udecl16
 #undef decl32
@@ -1832,7 +1849,7 @@ extend_inode_blk(filesystem *fs, inode_pos *ipos, block b, int amount)
 
 	for (pos = 0; amount; pos += BLOCKSIZE)
 	{
-		int hole = ((fs->sb->s_reserved[200] & OP_HOLES) && is_blk_empty(b + pos));
+		int hole = (fs->holes && is_blk_empty(b + pos));
 
 		bk = walk_bw(fs, ipos->nod, &ipos->bw, &amount, hole);
 		if (bk == WALK_END)
@@ -2053,6 +2070,14 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 	return nod;
 }
 
+static void
+fs_upgrade_rev1_largefile(filesystem *fs)
+{
+	fs->sb->s_rev_level = 1;
+	fs->sb->s_first_ino = EXT2_GOOD_OLD_FIRST_INO;
+	fs->sb->s_inode_size = EXT2_GOOD_OLD_INODE_SIZE;
+}
+
 #define COPY_BLOCKS 16
 #define CB_SIZE (COPY_BLOCKS * BLOCKSIZE)
 
@@ -2067,11 +2092,16 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, off_
 	size_t readbytes;
 	inode_pos ipos;
 
-
 	b = malloc(CB_SIZE);
 	if (!b)
 		error_msg_and_die("mkfile_fs: out of memory");
 	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
+	if (size > 0x7fffffff) {
+		if (fs->sb->s_rev_level < 1)
+			fs_upgrade_rev1_largefile(fs);
+		fs->sb->s_feature_ro_compat |= EXT2_FEATURE_RO_COMPAT_LARGE_FILE;
+	}
+	node->i_dir_acl = size >> 32;
 	node->i_size = size;
 	while (size) {
 		readbytes = fread(b, 1, CB_SIZE, f);
@@ -2406,6 +2436,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 
 // Copy size blocks from src to dst, putting holes in the output
 // file (if possible) if the input block is all zeros.
+// Copy size blocks from src to dst, putting holes in the output
+// file (if possible) if the input block is all zeros.
 static void
 copy_file(filesystem *fs, FILE *dst, FILE *src, size_t size)
 {
@@ -2421,7 +2453,7 @@ copy_file(filesystem *fs, FILE *dst, FILE *src, size_t size)
 	while (size > 0) {
 		if (fread(b, BLOCKSIZE, 1, src) != 1)
 			perror_msg_and_die("copy failed on read");
-		if ((dst != stdout) && is_blk_empty(b)) {
+		if ((dst != stdout) && fs->holes && is_blk_empty(b)) {
 			/* Empty block, just skip it */
 			if (fseek(dst, BLOCKSIZE, SEEK_CUR))
 				perror_msg_and_die("fseek");
@@ -2571,8 +2603,6 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	fs->sb->s_lastcheck = fs_timestamp;
 	fs->sb->s_creator_os = creator_os;
 
-	fs->sb->s_reserved[200] = 0;
-
 	set_file_size(fs);
 
 	// set up groupdescriptors
@@ -2684,8 +2714,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	fs->sb->s_max_mnt_count = 20;
 
 	// options for me
-	if(holes)
-		fs->sb->s_reserved[200] |= OP_HOLES;
+	fs->holes = holes;
 	
 	return fs;
 }
@@ -2719,8 +2748,21 @@ load_fs(FILE *fh, int swapit, char *fname)
 	if(swapit)
 		swap_sb(fs->sb);
 
-	if(fs->sb->s_rev_level || (fs->sb->s_magic != EXT2_MAGIC_NUMBER))
+	if((fs->sb->s_rev_level > 1) || (fs->sb->s_magic != EXT2_MAGIC_NUMBER))
 		error_msg_and_die("not a suitable ext2 filesystem");
+	if (fs->sb->s_rev_level > 0) {
+		if (fs->sb->s_first_ino != EXT2_GOOD_OLD_FIRST_INO)
+			error_msg_and_die("First inode incompatible");
+		if (fs->sb->s_inode_size != EXT2_GOOD_OLD_INODE_SIZE)
+			error_msg_and_die("inode size incompatible");
+		if (fs->sb->s_feature_compat)
+			error_msg_and_die("Unsupported compat features");
+		if (fs->sb->s_feature_incompat)
+			error_msg_and_die("Unsupported incompat features");
+		if (fs->sb->s_feature_ro_compat
+		    & ~EXT2_FEATURE_RO_COMPAT_LARGE_FILE)
+			error_msg_and_die("Unsupported ro compat features");
+	}
 
 	set_file_size(fs);
 	return fs;
@@ -3034,7 +3076,6 @@ finish_fs(filesystem *fs)
 		error_msg_and_die("entry mismatch on gd cache flush");
 	if (cache_flush(&fs->blks))
 		error_msg_and_die("entry mismatch on block cache flush");
-	fs->sb->s_reserved[200] = 0;
 	if(fs->swapit)
 		swap_sb(fs->sb);
 	if (fseek(fs->f, SUPERBLOCK_OFFSET, SEEK_SET))
