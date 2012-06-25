@@ -470,6 +470,17 @@ swab32(uint32 val)
 			((val<<8)&0xFF0000) | (val<<24));
 }
 
+static inline int
+is_blk_empty(uint8 *b)
+{
+	uint32 i;
+	uint32 *v = (uint32 *) b;
+
+	for(i = 0; i < BLOCKSIZE / 4; i++)
+		if (*v++)
+			return 0;
+	return 1;
+}
 
 // on-disk structures
 // this trick makes me declare things only once
@@ -1243,7 +1254,6 @@ init_bw(blockwalker *bw)
 //				  used after being freed, so once you start
 //				  freeing blocks don't stop until the end of
 //				  the file. moreover, i_blocks isn't updated.
-//				  in fact, don't do that, just use extend_blk
 // if hole!=0, create a hole in the file
 static uint32
 walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
@@ -1501,57 +1511,82 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 	return bk;
 }
 
-// add blocks to an inode (file/dir/etc...)
-static void
-extend_blk(filesystem *fs, uint32 nod, block b, int amount)
+typedef struct
 {
-	int create = amount;
-	blockwalker bw, lbw;
-	uint32 bk;
+	blockwalker bw;
+	uint32 nod;
 	nod_info *ni;
 	inode *inod;
+} inode_pos;
+#define INODE_POS_TRUNCATE 0
+#define INODE_POS_EXTEND 1
 
-	inod = get_nod(fs, nod, &ni);
-	init_bw(&bw);
-	if(amount < 0)
-	{
-		uint32 i;
-		for(i = 0; i < inod->i_blocks / INOBLK + amount; i++)
-			walk_bw(fs, nod, &bw, 0, 0);
-		while(walk_bw(fs, nod, &bw, &create, 0) != WALK_END)
+// Call this to set up an ipos structure for future use with
+// extend_inode_blk to append blocks to the given inode.  If
+// op is INODE_POS_TRUNCATE, the inode is truncated to zero size.
+// If op is INODE_POS_EXTEND, the position is moved to the end
+// of the inode's data blocks.
+// Call inode_pos_finish when done with the inode_pos structure.
+static void
+inode_pos_init(filesystem *fs, inode_pos *ipos, uint32 nod, int op,
+	       blockwalker *endbw)
+{
+	blockwalker lbw;
+
+	init_bw(&ipos->bw);
+	ipos->nod = nod;
+	ipos->inod = get_nod(fs, nod, &ipos->ni);
+	if (op == INODE_POS_TRUNCATE) {
+		int32 create = -1;
+		while(walk_bw(fs, nod, &ipos->bw, &create, 0) != WALK_END)
 			/*nop*/;
-		inod->i_blocks += amount * INOBLK;
+		ipos->inod->i_blocks = 0;
 	}
-	else
+
+	if (endbw)
+		ipos->bw = *endbw;
+	else {
+		/* Seek to the end */
+		init_bw(&ipos->bw);
+		lbw = ipos->bw;
+		while(walk_bw(fs, nod, &ipos->bw, 0, 0) != WALK_END)
+			lbw = ipos->bw;
+		ipos->bw = lbw;
+	}
+}
+
+// Clean up the inode_pos structure.
+static void
+inode_pos_finish(filesystem *fs, inode_pos *ipos)
+{
+	put_nod(ipos->ni);
+}
+
+// add blocks to an inode (file/dir/etc...) at the given position.
+// This will only work when appending to the end of an inode.
+static void
+extend_inode_blk(filesystem *fs, inode_pos *ipos, block b, int amount)
+{
+	uint32 bk;
+	uint32 pos;
+
+	if (amount < 0)
+		error_msg_and_die("extend_inode_blk: Got negative amount");
+
+	for (pos = 0; amount; pos += BLOCKSIZE)
 	{
-		lbw = bw;
-		while((bk = walk_bw(fs, nod, &bw, 0, 0)) != WALK_END)
-			lbw = bw;
-		bw = lbw;
-		while(create)
-		{
-			int i, copyb = 0;
-			if(!(fs->sb->s_reserved[200] & OP_HOLES))
-				copyb = 1;
-			else
-				for(i = 0; i < BLOCKSIZE / 4; i++)
-					if(((int32*)(b + BLOCKSIZE * (amount - create)))[i])
-					{
-						copyb = 1;
-						break;
-					}
-			if((bk = walk_bw(fs, nod, &bw, &create, !copyb)) == WALK_END)
-				break;
-			if(copyb) {
-				blk_info *bi;
-				memcpy(get_blk(fs, bk, &bi),
-				       b + BLOCKSIZE * (amount - create - 1),
-				       BLOCKSIZE);
-				put_blk(bi);
-			}
+		int hole = ((fs->sb->s_reserved[200] & OP_HOLES) && is_blk_empty(b + pos));
+
+		bk = walk_bw(fs, ipos->nod, &ipos->bw, &amount, hole);
+		if (bk == WALK_END)
+			error_msg_and_die("extend_inode_blk: extend failed");
+		if (!hole) {
+			blk_info *bi;
+			uint8 *block = get_blk(fs, bk, &bi);
+			memcpy(block, b + pos, BLOCKSIZE);
+			put_blk(bi);
 		}
 	}
-	put_nod(ni);
 }
 
 // link an entry (inode #) to a directory
@@ -1566,6 +1601,7 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	inode *node;
 	inode *pnode;
 	nod_info *dni, *ni;
+	inode_pos ipos;
 
 	pnode = get_nod(fs, dnod, &dni);
 	if((pnode->i_mode & FM_IFMT) != FM_IFDIR)
@@ -1616,7 +1652,11 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	node->i_links_count++;
 	put_nod(ni);
 	next_dir(&dw); // Force the data into the buffer
-	extend_blk(fs, dnod, dir_data(&dw), 1);
+
+	inode_pos_init(fs, &ipos, dnod, INODE_POS_EXTEND, &lbw);
+	extend_inode_blk(fs, &ipos, dir_data(&dw), 1);
+	inode_pos_finish(fs, &ipos);
+
 	put_dir(&dw);
 	pnode->i_size += BLOCKSIZE;
 out:
@@ -1738,17 +1778,20 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 	uint32 nod = mknod_fs(fs, parent_nod, name, FM_IFLNK | FM_IRWXU | FM_IRWXG | FM_IRWXO, uid, gid, 0, 0, ctime, mtime);
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
+	inode_pos ipos;
 
-	extend_blk(fs, nod, 0, - (int)node->i_blocks / INOBLK);
+	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
 	node->i_size = size;
 	if(size < 4 * (EXT2_TIND_BLOCK+1))
 	{
 		strncpy((char*)node->i_block, (char*)b, size);
 		((char*)node->i_block)[size+1] = '\0';
+		inode_pos_finish(fs, &ipos);
 		put_nod(ni);
 		return nod;
 	}
-	extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+	extend_inode_blk(fs, &ipos, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
 	return nod;
 }
@@ -1761,8 +1804,9 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
+	inode_pos ipos;
 
-	extend_blk(fs, nod, 0, - (int)node->i_blocks / INOBLK);
+	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
 	node->i_size = size;
 	if (size) {
 		if(!(b = (uint8*)calloc(rndup(size, BLOCKSIZE), 1)))
@@ -1770,9 +1814,11 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size
 		if(f)
 			if (fread(b, size, 1, f) != 1) // FIXME: ugly. use mmap() ...
 				error_msg_and_die("fread failed");
-		extend_blk(fs, nod, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+		extend_inode_blk(fs, &ipos, b,
+				 rndup(size, BLOCKSIZE) / BLOCKSIZE);
 		free(b);
 	}
+	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
 	return nod;
 }
@@ -2310,6 +2356,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	nod_info *ni;
 	groupdescriptor *gd;
 	gd_info *gi;
+	inode_pos ipos;
 	
 	if(nbresrvd < 0)
 		error_msg_and_die("reserved blocks value is invalid. Note: options have changed, see --help or the man page.");
@@ -2446,7 +2493,9 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	new_dir(fs, EXT2_ROOT_INO, ".", 1, &dw);
 	shrink_dir(&dw, EXT2_ROOT_INO, "..", 2);
 	next_dir(&dw); // Force the data into the buffer
-	extend_blk(fs, EXT2_ROOT_INO, dir_data(&dw), 1);
+	inode_pos_init(fs, &ipos, EXT2_ROOT_INO, INODE_POS_EXTEND, NULL);
+	extend_inode_blk(fs, &ipos, dir_data(&dw), 1);
+	inode_pos_finish(fs, &ipos);
 	put_dir(&dw);
 
 	// make lost+found directory and reserve blocks
@@ -2464,8 +2513,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 		 */
 		if (fs->sb->s_r_blocks_count > fs->sb->s_blocks_count * MAX_RESERVED_BLOCKS )
 			fs->sb->s_r_blocks_count = fs->sb->s_blocks_count * MAX_RESERVED_BLOCKS;
+		inode_pos_init(fs, &ipos, nod, INODE_POS_EXTEND, NULL);
 		for(i = 1; i < fs->sb->s_r_blocks_count; i++)
-			extend_blk(fs, nod, b, 1);
+			extend_inode_blk(fs, &ipos, b, 1);
+		inode_pos_finish(fs, &ipos);
 		free_workblk(b);
 		node = get_nod(fs, nod, &ni);
 		node->i_size = fs->sb->s_r_blocks_count * BLOCKSIZE;
