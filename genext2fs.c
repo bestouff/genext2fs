@@ -889,6 +889,36 @@ put_gd(blk_info *rbi)
 {
 }
 
+// Used by get_blkmap/put_blkmap to hold information about an block map
+// owned by the user.
+typedef struct
+{
+	blk_info *bi;
+} blkmap_info;
+
+// Return a given block map from a filesystem.  Make sure to call
+// put_blkmap when you are done with it.
+static inline uint32 *
+get_blkmap(filesystem *fs, uint32 blk, blkmap_info **rbmi)
+{
+	blkmap_info *bmi;
+	uint8 *b;
+
+	bmi = malloc(sizeof(*bmi));
+	if (!bmi)
+		error_msg_and_die("get_blkmap: out of memory");
+	b = get_blk(fs, blk, &bmi->bi);
+	*rbmi = bmi;
+	return (uint32 *) b;
+}
+
+static inline void
+put_blkmap(blkmap_info *bmi)
+{
+	put_blk(bmi->bi);
+	free(bmi);
+}
+
 // Used by get_nod/put_nod to hold information about an inode owned
 // by the user.
 typedef struct
@@ -1099,12 +1129,12 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 {
 	uint32 *bkref = 0;
 	uint32 bk = 0;
+	blkmap_info *bmi1 = NULL, *bmi2 = NULL, *bmi3 = NULL;
 	uint32 *b;
 	int extend = 0, reduce = 0;
 	inode *inod;
 	nod_info *ni;
 	uint32 *iblk;
-	blk_info *bi1 = NULL, *bi2 = NULL, *bi3 = NULL;
 
 	if(create && (*create) < 0)
 		reduce = 1;
@@ -1151,7 +1181,7 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 			iblk[bw->bpdir] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
 			free_blk(fs, iblk[bw->bpdir]);
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		bkref = &b[bw->bpind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1162,7 +1192,7 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 	else if((bw->bpdir == EXT2_IND_BLOCK) && (bw->bpind < BLOCKSIZE/4 - 1))
 	{
 		bw->bpind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		bkref = &b[bw->bpind];
 		if(extend) // allocate block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1180,12 +1210,12 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 			iblk[bw->bpdir] = alloc_blk(fs,nod);
 		if(reduce) // free double indirect block
 			free_blk(fs, iblk[bw->bpdir]);
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		if(extend) // allocate first indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
 		if(reduce) // free  firstindirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi1);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1196,8 +1226,8 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 	else if((bw->bpdir == EXT2_DIND_BLOCK) && (bw->bpdind < BLOCKSIZE/4 - 1))
 	{
 		bw->bpdind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1210,12 +1240,12 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		bw->bnum++;
 		bw->bpdind = 0;
 		bw->bpind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		if(extend) // allocate indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		bkref = &b[bw->bpdind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1238,17 +1268,17 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 			iblk[bw->bpdir] = alloc_blk(fs,nod);
 		if(reduce) // free triple indirect block
 			free_blk(fs, iblk[bw->bpdir]);
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		if(extend) // allocate first double indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
 		if(reduce) // free first double indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		if(extend) // allocate first indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free first indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpdind], &bi3);
+		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1262,9 +1292,9 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		  (bw->bptind < BLOCKSIZE/4 -1) )
 	{
 		bw->bptind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
-		b = (uint32*)get_blk(fs, b[bw->bpdind], &bi3);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
+		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1281,13 +1311,13 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		bw->bnum++;
 		bw->bptind = 0;
 		bw->bpdind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpdind], &bi3);
+		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1304,17 +1334,17 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		bw->bpdind = 0;
 		bw->bptind = 0;
 		bw->bpind++;
-		b = (uint32*)get_blk(fs, iblk[bw->bpdir], &bi1);
+		b = get_blkmap(fs, iblk[bw->bpdir], &bmi1);
 		if(extend) // allocate double indirect block
 			b[bw->bpind] = alloc_blk(fs,nod);
 		if(reduce) // free double indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpind], &bi2);
+		b = get_blkmap(fs, b[bw->bpind], &bmi2);
 		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
 			free_blk(fs, b[bw->bpind]);
-		b = (uint32*)get_blk(fs, b[bw->bpdind], &bi3);
+		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first block
 			*bkref = hole ? 0 : alloc_blk(fs,nod);
@@ -1326,12 +1356,12 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 	/* End change for walking triple indirection */
 
 	bk = *bkref;
-	if (bi3)
-		put_blk(bi3);
-	if (bi2)
-		put_blk(bi2);
-	if (bi1)
-		put_blk(bi1);
+	if (bmi3)
+		put_blkmap(bmi3);
+	if (bmi2)
+		put_blkmap(bmi2);
+	if (bmi1)
+		put_blkmap(bmi1);
 
 	if(bk)
 	{
