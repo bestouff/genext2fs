@@ -53,6 +53,12 @@
 // 			along with -q, -P, -U
 
 
+/*
+ * Allow fseeko/off_t to be 64-bit offsets to allow filesystems and
+ * individual files >2GB.
+ */
+#define _FILE_OFFSET_BITS 64
+
 #include <config.h>
 #include <stdio.h>
 
@@ -2047,30 +2053,38 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 	return nod;
 }
 
+#define COPY_BLOCKS 16
+#define CB_SIZE (COPY_BLOCKS * BLOCKSIZE)
+
 // make a file from a FILE*
 static uint32
-mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, size_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, off_t size, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint8 * b;
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
+	size_t readbytes;
 	inode_pos ipos;
 
+
+	b = malloc(CB_SIZE);
+	if (!b)
+		error_msg_and_die("mkfile_fs: out of memory");
 	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
 	node->i_size = size;
-	if (size) {
-		if(!(b = (uint8*)calloc(rndup(size, BLOCKSIZE), 1)))
-			error_msg_and_die("not enough mem to read file '%s'", name);
-		if(f)
-			if (fread(b, size, 1, f) != 1) // FIXME: ugly. use mmap() ...
-				error_msg_and_die("fread failed");
+	while (size) {
+		readbytes = fread(b, 1, CB_SIZE, f);
+		if ((size < CB_SIZE && readbytes != size)
+		    || (size >= CB_SIZE && readbytes != CB_SIZE))
+			error_msg_and_die("fread failed");
 		extend_inode_blk(fs, &ipos, b,
-				 rndup(size, BLOCKSIZE) / BLOCKSIZE);
-		free(b);
+				 rndup(readbytes, BLOCKSIZE) / BLOCKSIZE);
+		size -= readbytes;
 	}
 	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
+	free(b);
 	return nod;
 }
 
