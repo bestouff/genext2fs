@@ -142,6 +142,8 @@
 # include <limits.h>
 #endif
 
+#include "cache.h"
+
 struct stats {
 	unsigned long nblocks;
 	unsigned long ninodes;
@@ -150,6 +152,9 @@ struct stats {
 // block size
 
 static int blocksize = 1024;
+
+#define SUPERBLOCK_OFFSET	1024
+#define SUPERBLOCK_SIZE		1024
 
 #define BLOCKSIZE         blocksize
 #define BLOCKS_PER_GROUP  8192
@@ -633,11 +638,16 @@ struct hdlinks_s
 /* Filesystem structure that support groups */
 typedef struct
 {
-	uint8 *data;
+	FILE *f;
 	superblock *sb;
 	int swapit;
 	int32 hdlink_cnt;
 	struct hdlinks_s hdlinks;
+
+	listcache blks;
+	listcache gds;
+	listcache inodes;
+	listcache blkmaps;
 } filesystem;
 
 // now the endianness swap
@@ -876,32 +886,121 @@ allocated(block b, uint32 item)
 // by the user.
 typedef struct
 {
-	int dummy;
+	cache_link link;
+
+	filesystem *fs;
+	uint32 blk;
+	uint8 *b;
+	uint32 usecount;
 } blk_info;
+
+#define MAX_FREE_CACHE_BLOCKS 100
+
+static uint32
+blk_elem_val(cache_link *elem)
+{
+	blk_info *bi = container_of(elem, blk_info, link);
+	return bi->blk;
+}
+
+static void
+blk_freed(cache_link *elem)
+{
+	blk_info *bi = container_of(elem, blk_info, link);
+
+	if (fseeko(bi->fs->f, ((off_t) bi->blk) * BLOCKSIZE, SEEK_SET))
+		perror_msg_and_die("fseek");
+	if (fwrite(bi->b, BLOCKSIZE, 1, bi->fs->f) != 1)
+		perror_msg_and_die("get_blk: write");
+	free(bi->b);
+	free(bi);
+}
 
 // Return a given block from a filesystem.  Make sure to call
 // put_blk when you are done with it.
 static inline uint8 *
 get_blk(filesystem *fs, uint32 blk, blk_info **rbi)
 {
-	return fs->data + blk*BLOCKSIZE;
+	cache_link *curr;
+	blk_info *bi;
+
+	if (blk >= fs->sb->s_blocks_count)
+		error_msg_and_die("Internal error, block out of range");
+
+	curr = cache_find(&fs->blks, blk);
+	if (curr) {
+		bi = container_of(curr, blk_info, link);
+		bi->usecount++;
+		goto out;
+	}
+
+	bi = malloc(sizeof(*bi));
+	if (!bi)
+		error_msg_and_die("get_blk: out of memory");
+	bi->fs = fs;
+	bi->blk = blk;
+	bi->usecount = 1;
+	bi->b = malloc(BLOCKSIZE);
+	if (!bi->b)
+		error_msg_and_die("get_blk: out of memory");
+	cache_add(&fs->blks, &bi->link);
+	if (fseeko(fs->f, ((off_t) blk) * BLOCKSIZE, SEEK_SET))
+		perror_msg_and_die("fseek");
+	if (fread(bi->b, BLOCKSIZE, 1, fs->f) != 1) {
+		if (ferror(fs->f))
+			perror_msg_and_die("fread");
+		memset(bi->b, 0, BLOCKSIZE);
+	}
+
+out:
+	*rbi = bi;
+	return bi->b;
 }
 
 // return a given inode from a filesystem
 static inline void
 put_blk(blk_info *bi)
 {
+	if (bi->usecount == 0)
+		error_msg_and_die("Internal error: put_blk usecount zero");
+	bi->usecount--;
+	if (bi->usecount == 0)
+		/* Free happens in the cache code */
+		cache_item_set_unused(&bi->fs->blks, &bi->link);
 }
 
 typedef struct
 {
+	cache_link link;
+
 	filesystem *fs;
+	int gds;
 	blk_info *bi;
 	groupdescriptor *gd;
+	uint32 usecount;
 } gd_info;
 
-/* 2048 is the boot stuff plus the superblock */
-#define GDS_START ((2048 + BLOCKSIZE - 1) / BLOCKSIZE)
+#define MAX_FREE_CACHE_GDS 100
+
+static uint32
+gd_elem_val(cache_link *elem)
+{
+	gd_info *gi = container_of(elem, gd_info, link);
+	return gi->gds;
+}
+
+static void
+gd_freed(cache_link *elem)
+{
+	gd_info *gi = container_of(elem, gd_info, link);
+
+	if (gi->fs->swapit)
+		swap_gd(gi->gd);
+	put_blk(gi->bi);
+	free(gi);
+}
+
+#define GDS_START ((SUPERBLOCK_OFFSET + SUPERBLOCK_SIZE + BLOCKSIZE - 1) / BLOCKSIZE)
 #define GDS_PER_BLOCK (BLOCKSIZE / sizeof(groupdescriptor))
 // the group descriptors are aligned on the block size
 static inline groupdescriptor *
@@ -910,16 +1009,28 @@ get_gd(filesystem *fs, uint32 no, gd_info **rgi)
 	uint32 gdblk;
 	uint32 offset;
 	gd_info *gi;
+	cache_link *curr;
+
+	curr = cache_find(&fs->gds, no);
+	if (curr) {
+		gi = container_of(curr, gd_info, link);
+		gi->usecount++;
+		goto out;
+	}
 
 	gi = malloc(sizeof(*gi));
 	if (!gi)
 		error_msg_and_die("get_gd: out of memory");
 	gi->fs = fs;
+	gi->gds = no;
+	gi->usecount = 1;
 	gdblk = GDS_START + (no / GDS_PER_BLOCK);
 	offset = no % GDS_PER_BLOCK;
 	gi->gd = ((groupdescriptor *) get_blk(fs, gdblk, &gi->bi)) + offset;
+	cache_add(&fs->gds, &gi->link);
 	if (fs->swapit)
 		swap_gd(gi->gd);
+ out:
 	*rgi = gi;
 
 	return gi->gd;
@@ -928,20 +1039,47 @@ get_gd(filesystem *fs, uint32 no, gd_info **rgi)
 static inline void
 put_gd(gd_info *gi)
 {
-	if (gi->fs->swapit)
-		swap_gd(gi->gd);
-	put_blk(gi->bi);
-	free(gi);
+	if (gi->usecount == 0)
+		error_msg_and_die("Internal error: put_gd usecount zero");
+
+	gi->usecount--;
+	if (gi->usecount == 0)
+		/* Free happens in the cache code */
+		cache_item_set_unused(&gi->fs->gds, &gi->link);
 }
 
 // Used by get_blkmap/put_blkmap to hold information about an block map
 // owned by the user.
 typedef struct
 {
+	cache_link link;
+
 	filesystem *fs;
+	uint32 blk;
 	uint8 *b;
 	blk_info *bi;
+	uint32 usecount;
 } blkmap_info;
+
+#define MAX_FREE_CACHE_BLOCKMAPS 100
+
+static uint32
+blkmap_elem_val(cache_link *elem)
+{
+	blkmap_info *bmi = container_of(elem, blkmap_info, link);
+	return bmi->blk;
+}
+
+static void
+blkmap_freed(cache_link *elem)
+{
+	blkmap_info *bmi = container_of(elem, blkmap_info, link);
+
+	if (bmi->fs->swapit)
+		swap_block(bmi->b);
+	put_blk(bmi->bi);
+	free(bmi);
+}
 
 // Return a given block map from a filesystem.  Make sure to call
 // put_blkmap when you are done with it.
@@ -949,14 +1087,27 @@ static inline uint32 *
 get_blkmap(filesystem *fs, uint32 blk, blkmap_info **rbmi)
 {
 	blkmap_info *bmi;
+	cache_link *curr;
+
+	curr = cache_find(&fs->blkmaps, blk);
+	if (curr) {
+		bmi = container_of(curr, blkmap_info, link);
+		bmi->usecount++;
+		goto out;
+	}
 
 	bmi = malloc(sizeof(*bmi));
 	if (!bmi)
 		error_msg_and_die("get_blkmap: out of memory");
 	bmi->fs = fs;
+	bmi->blk = blk;
 	bmi->b = get_blk(fs, blk, &bmi->bi);
-	if (bmi->fs->swapit)
+	bmi->usecount = 1;
+	cache_add(&fs->blkmaps, &bmi->link);
+
+	if (fs->swapit)
 		swap_block(bmi->b);
+ out:
 	*rbmi = bmi;
 	return (uint32 *) bmi->b;
 }
@@ -964,20 +1115,48 @@ get_blkmap(filesystem *fs, uint32 blk, blkmap_info **rbmi)
 static inline void
 put_blkmap(blkmap_info *bmi)
 {
-	if (bmi->fs->swapit)
-		swap_block(bmi->b);
-	put_blk(bmi->bi);
-	free(bmi);
+	if (bmi->usecount == 0)
+		error_msg_and_die("Internal error: put_blkmap usecount zero");
+
+	bmi->usecount--;
+	if (bmi->usecount == 0)
+		/* Free happens in the cache code */
+		cache_item_set_unused(&bmi->fs->blkmaps, &bmi->link);
 }
 
 // Used by get_nod/put_nod to hold information about an inode owned
 // by the user.
 typedef struct
 {
+	cache_link link;
+
 	filesystem *fs;
+	uint32 nod;
+	uint8 *b;
 	blk_info *bi;
 	inode *itab;
+	uint32 usecount;
 } nod_info;
+
+#define MAX_FREE_CACHE_INODES 100
+
+static uint32
+inode_elem_val(cache_link *elem)
+{
+	nod_info *ni = container_of(elem, nod_info, link);
+	return ni->nod;
+}
+
+static void
+inode_freed(cache_link *elem)
+{
+	nod_info *ni = container_of(elem, nod_info, link);
+
+	if (ni->fs->swapit)
+		swap_nod(ni->itab);
+	put_blk(ni->bi);
+	free(ni);
+}
 
 #define INODES_PER_BLOCK (BLOCKSIZE / sizeof(inode))
 
@@ -986,25 +1165,37 @@ static inline inode *
 get_nod(filesystem *fs, uint32 nod, nod_info **rni)
 {
 	uint32 grp, boffset, offset;
+	cache_link *curr;
 	groupdescriptor *gd;
 	gd_info *gi;
 	nod_info *ni;
-	uint8 *b;
+
+	curr = cache_find(&fs->inodes, nod);
+	if (curr) {
+		ni = container_of(curr, nod_info, link);
+		ni->usecount++;
+		goto out;
+	}
 
 	ni = malloc(sizeof(*ni));
 	if (!ni)
 		error_msg_and_die("get_nod: out of memory");
 	ni->fs = fs;
+	ni->nod = nod;
+	ni->usecount = 1;
+	cache_add(&fs->inodes, &ni->link);
+
 	offset = GRP_IBM_OFFSET(fs,nod) - 1;
 	boffset = offset / INODES_PER_BLOCK;
 	offset %= INODES_PER_BLOCK;
 	grp = GRP_GROUP_OF_INODE(fs,nod);
 	gd = get_gd(fs, grp, &gi);
-	b = get_blk(fs, gd->bg_inode_table + boffset, &ni->bi);
-	ni->itab = ((inode *) b) + offset;
+	ni->b = get_blk(fs, gd->bg_inode_table + boffset, &ni->bi);
+	ni->itab = ((inode *) ni->b) + offset;
 	if (fs->swapit)
 		swap_nod(ni->itab);
 	put_gd(gi);
+ out:
 	*rni = ni;
 	return ni->itab;
 }
@@ -1012,10 +1203,13 @@ get_nod(filesystem *fs, uint32 nod, nod_info **rni)
 static inline void
 put_nod(nod_info *ni)
 {
-	if (ni->fs->swapit)
-		swap_nod(ni->itab);
-	put_blk(ni->bi);
-	free(ni);
+	if (ni->usecount == 0)
+		error_msg_and_die("Internal error: put_nod usecount zero");
+
+	ni->usecount--;
+	if (ni->usecount == 0)
+		/* Free happens in the cache code */
+		cache_item_set_unused(&ni->fs->inodes, &ni->link);
 }
 
 // Used to hold state information while walking a directory inode.
@@ -2196,47 +2390,98 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	closedir(dh);
 }
 
-// endianness swap of the whole filesystem
+// Copy size blocks from src to dst, putting holes in the output
+// file (if possible) if the input block is all zeros.
 static void
-swap_goodfs(filesystem *fs)
+copy_file(filesystem *fs, FILE *dst, FILE *src, size_t size)
 {
-	swap_sb(fs->sb);
-}
+	uint8 *b;
 
-static void
-swap_badfs(filesystem *fs)
-{
-	swap_sb(fs->sb);
+	b = malloc(BLOCKSIZE);
+	if (!b)
+		error_msg_and_die("copy_file: out of memory");
+	if (fseek(src, 0, SEEK_SET))
+		perror_msg_and_die("fseek");
+	if (ftruncate(fileno(dst), 0))
+		perror_msg_and_die("copy_file: ftruncate");
+	while (size > 0) {
+		if (fread(b, BLOCKSIZE, 1, src) != 1)
+			perror_msg_and_die("copy failed on read");
+		if ((dst != stdout) && is_blk_empty(b)) {
+			/* Empty block, just skip it */
+			if (fseek(dst, BLOCKSIZE, SEEK_CUR))
+				perror_msg_and_die("fseek");
+		} else {
+			if (fwrite(b, BLOCKSIZE, 1, dst) != 1)
+				perror_msg_and_die("copy failed on write");
+		}
+		size--;
+	}
+	free(b);
 }
 
 // Allocate a new filesystem structure, allocate internal memory,
 // and initialize the contents.
 static filesystem *
-alloc_fs(uint32 nbblocks, int swapit)
+alloc_fs(int swapit, char *fname, uint32 nbblocks, FILE *srcfile)
 {
 	filesystem *fs;
+	struct stat srcstat, dststat;
 
 	fs = malloc(sizeof(*fs));
 	if (!fs)
 		error_msg_and_die("not enough memory for filesystem");
 	memset(fs, 0, sizeof(*fs));
 	fs->swapit = swapit;
-	if(!(fs->data = calloc(nbblocks, BLOCKSIZE)))
-		error_msg_and_die("not enough memory for filesystem");
+	cache_init(&fs->blks, MAX_FREE_CACHE_BLOCKS, blk_elem_val, blk_freed);
+	cache_init(&fs->gds, MAX_FREE_CACHE_GDS, gd_elem_val, gd_freed);
+	cache_init(&fs->blkmaps, MAX_FREE_CACHE_BLOCKMAPS,
+		   blkmap_elem_val, blkmap_freed);
+	cache_init(&fs->inodes, MAX_FREE_CACHE_INODES,
+		   inode_elem_val, inode_freed);
 	fs->hdlink_cnt = HDLINK_CNT;
 	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
 	if (!fs->hdlinks.hdl)
 		error_msg_and_die("Not enough memory");
 	fs->hdlinks.count = 0 ;
-	/* Always 1024 off, blocksize can vary. */
-	fs->sb = (superblock *) (fs->data + 1024);
+
+	if (strcmp(fname, "-") == 0)
+		fs->f = tmpfile();
+	else if (srcfile) {
+		if (fstat(fileno(srcfile), &srcstat))
+			perror_msg_and_die("fstat srcfile");
+		if (stat(fname, &dststat) == 0
+		    && srcstat.st_ino == dststat.st_ino
+		    && srcstat.st_dev == dststat.st_dev)
+		  {
+			// source and destination are the same file, don't
+			// truncate or copy, just use the file.
+			fs->f = fopen(fname, "r+b");
+		} else {
+			fs->f = fopen(fname, "w+b");
+			if (fs->f)
+				copy_file(fs, fs->f, srcfile, nbblocks);
+		}
+	} else
+		fs->f = fopen(fname, "w+b");
+	if (!fs->f)
+		perror_msg_and_die("opening %s", fname);
 	return fs;
+}
+
+/* Make sure the output file is the right size */
+static void
+set_file_size(filesystem *fs)
+{
+	if (ftruncate(fileno(fs->f),
+		      ((off_t) fs->sb->s_blocks_count) * BLOCKSIZE))
+		perror_msg_and_die("set_file_size: ftruncate");
 }
 
 // initialize an empty filesystem
 static filesystem *
 init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
-	uint32 fs_timestamp, uint32 creator_os, int swapit)
+	uint32 fs_timestamp, uint32 creator_os, int swapit, char *fname)
 {
 	uint32 i;
 	filesystem *fs;
@@ -2290,7 +2535,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	if(free_blocks < 0)
 		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 
-	fs = alloc_fs(nbblocks, swapit);
+	fs = alloc_fs(swapit, fname, nbblocks, NULL);
+	fs->sb = calloc(1, SUPERBLOCK_SIZE);
+	if (!fs->sb)
+		error_msg_and_die("error allocating header memory");
 
 	// create the superblock for an empty filesystem
 	fs->sb->s_inodes_count = nbinodes_per_group * nbgroups;
@@ -2308,6 +2556,10 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	fs->sb->s_magic = EXT2_MAGIC_NUMBER;
 	fs->sb->s_lastcheck = fs_timestamp;
 	fs->sb->s_creator_os = creator_os;
+
+	fs->sb->s_reserved[200] = 0;
+
+	set_file_size(fs);
 
 	// set up groupdescriptors
 	for(i=0, bbmpos=first_block+1+gdsz, ibmpos=bbmpos+1, itblpos=ibmpos+1;
@@ -2426,24 +2678,37 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 
 // loads a filesystem from disk
 static filesystem *
-load_fs(FILE * fh, int swapit)
+load_fs(FILE *fh, int swapit, char *fname)
 {
-	size_t fssize;
+	off_t fssize;
 	filesystem *fs;
-	if((fseek(fh, 0, SEEK_END) < 0) || ((ssize_t)(fssize = ftell(fh)) == -1))
+
+	if((fseek(fh, 0, SEEK_END) < 0) || ((fssize = ftello(fh)) == -1))
 		perror_msg_and_die("input filesystem image");
 	rewind(fh);
-	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
+	if ((fssize % BLOCKSIZE) != 0)
+		error_msg_and_die("Input file not a multiple of block size");
+	fssize /= BLOCKSIZE;
 	if(fssize < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
-	fs = alloc_fs(fssize, swapit);
-	if(fread(fs->data, BLOCKSIZE, fssize, fh) != fssize)
-		perror_msg_and_die("input filesystem image");
+	fs = alloc_fs(swapit, fname, fssize, fh);
 
+	/* Read and check the superblock, then read the superblock
+	 * and all the group descriptors */
+	fs->sb = malloc(SUPERBLOCK_SIZE);
+	if (!fs->sb)
+		error_msg_and_die("error allocating header memory");
+	if (fseek(fs->f, SUPERBLOCK_OFFSET, SEEK_SET))
+		perror_msg_and_die("fseek");
+	if (fread(fs->sb, SUPERBLOCK_SIZE, 1, fs->f) != 1)
+		perror_msg_and_die("fread filesystem image superblock");
 	if(swapit)
-		swap_badfs(fs);
+		swap_sb(fs->sb);
+
 	if(fs->sb->s_rev_level || (fs->sb->s_magic != EXT2_MAGIC_NUMBER))
 		error_msg_and_die("not a suitable ext2 filesystem");
+
+	set_file_size(fs);
 	return fs;
 }
 
@@ -2451,7 +2716,8 @@ static void
 free_fs(filesystem *fs)
 {
 	free(fs->hdlinks.hdl);
-	free(fs->data);
+	fclose(fs->f);
+	free(fs->sb);
 	free(fs);
 }
 
@@ -2744,16 +3010,25 @@ print_fs(filesystem *fs)
 }
 
 static void
-dump_fs(filesystem *fs, FILE * fh, int swapit)
+finish_fs(filesystem *fs)
 {
-	uint32 nbblocks = fs->sb->s_blocks_count;
+	if (cache_flush(&fs->inodes))
+		error_msg_and_die("entry mismatch on inode cache flush");
+	if (cache_flush(&fs->blkmaps))
+		error_msg_and_die("entry mismatch on blockmap cache flush");
+	if (cache_flush(&fs->gds))
+		error_msg_and_die("entry mismatch on gd cache flush");
+	if (cache_flush(&fs->blks))
+		error_msg_and_die("entry mismatch on block cache flush");
 	fs->sb->s_reserved[200] = 0;
-	if(swapit)
-		swap_goodfs(fs);
-	if(fwrite(fs->data, BLOCKSIZE, nbblocks, fh) < nbblocks)
-		perror_msg_and_die("output filesystem image");
-	if(swapit)
-		swap_badfs(fs);
+	if(fs->swapit)
+		swap_sb(fs->sb);
+	if (fseek(fs->f, SUPERBLOCK_OFFSET, SEEK_SET))
+		perror_msg_and_die("fseek");
+	if(fwrite(fs->sb, SUPERBLOCK_SIZE, 1, fs->f) != 1)
+		perror_msg_and_die("output filesystem superblock");
+	if(fs->swapit)
+		swap_sb(fs->sb);
 }
 
 static void
@@ -2998,11 +3273,11 @@ main(int argc, char **argv)
 		if(strcmp(fsin, "-"))
 		{
 			FILE * fh = xfopen(fsin, "rb");
-			fs = load_fs(fh, bigendian);
+			fs = load_fs(fh, bigendian, fsout);
 			fclose(fh);
 		}
 		else
-			fs = load_fs(stdin, bigendian);
+			fs = load_fs(stdin, bigendian, fsout);
 	}
 	else
 	{
@@ -3033,7 +3308,7 @@ main(int argc, char **argv)
 		if(fs_timestamp == -1)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes,
-			     fs_timestamp, creator_os, bigendian);
+			     fs_timestamp, creator_os, bigendian, fsout);
 	}
 	
 	populate_fs(fs, dopt, didx, squash_uids, squash_perms, fs_timestamp, NULL);
@@ -3073,14 +3348,10 @@ main(int argc, char **argv)
 		flist_blocks(fs, nod, fh);
 		fclose(fh);
 	}
-	if(strcmp(fsout, "-"))
-	{
-		FILE * fh = xfopen(fsout, "wb");
-		dump_fs(fs, fh, bigendian);
-		fclose(fh);
-	}
-	else
-		dump_fs(fs, stdout, bigendian);
+	finish_fs(fs);
+	if(strcmp(fsout, "-") == 0)
+		copy_file(fs, stdout, fs->f, fs->sb->s_blocks_count);
+
 	free_fs(fs);
 	return 0;
 }
