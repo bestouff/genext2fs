@@ -2335,6 +2335,29 @@ swap_badfs(filesystem *fs)
 	}
 }
 
+// Allocate a new filesystem structure, allocate internal memory,
+// and initialize the contents.
+static filesystem *
+alloc_fs(uint32 nbblocks)
+{
+	filesystem *fs;
+
+	fs = malloc(sizeof(*fs));
+	if (!fs)
+		error_msg_and_die("not enough memory for filesystem");
+	memset(fs, 0, sizeof(*fs));
+	if(!(fs->data = calloc(nbblocks, BLOCKSIZE)))
+		error_msg_and_die("not enough memory for filesystem");
+	fs->hdlink_cnt = HDLINK_CNT;
+	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
+	if (!fs->hdlinks.hdl)
+		error_msg_and_die("Not enough memory");
+	fs->hdlinks.count = 0 ;
+	/* Always 1024 off, blocksize can vary. */
+	fs->sb = (superblock *) (fs->data + 1024);
+	return fs;
+}
+
 // initialize an empty filesystem
 static filesystem *
 init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
@@ -2392,18 +2415,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	if(free_blocks < 0)
 		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 
-	fs = malloc(sizeof(*fs));
-	if (!fs)
-		error_msg_and_die("not enough memory for filesystem");
-	if(!(fs->data = calloc(nbblocks, BLOCKSIZE)))
-		error_msg_and_die("not enough memory for filesystem");
-	fs->hdlink_cnt = HDLINK_CNT;
-	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
-	if (!fs->hdlinks.hdl)
-		error_msg_and_die("Not enough memory");
-	fs->hdlinks.count = 0 ;
-	/* Always 1024 off, blocksize can vary. */
-	fs->sb = (superblock *) (fs->data + 1024);
+	fs = alloc_fs(nbblocks);
 
 	// create the superblock for an empty filesystem
 	fs->sb->s_inodes_count = nbinodes_per_group * nbgroups;
@@ -2549,19 +2561,9 @@ load_fs(FILE * fh, int swapit)
 	fssize = (fssize + BLOCKSIZE - 1) / BLOCKSIZE;
 	if(fssize < 16) // totally arbitrary
 		error_msg_and_die("too small filesystem");
-	fs = malloc(sizeof(*fs));
-	if (!fs)
-		error_msg_and_die("not enough memory for filesystem");
-	fs->hdlink_cnt = HDLINK_CNT;
-	fs->hdlinks.hdl = calloc(sizeof(struct hdlink_s), fs->hdlink_cnt);
-	if (!fs->hdlinks.hdl)
-		error_msg_and_die("Not enough memory");
-	fs->hdlinks.count = 0 ;
-	if(!(fs->data = calloc(fssize, BLOCKSIZE)))
-		error_msg_and_die("not enough memory for filesystem");
+	fs = alloc_fs(fssize);
 	if(fread(fs->data, BLOCKSIZE, fssize, fh) != fssize)
 		perror_msg_and_die("input filesystem image");
-	fs->sb = (superblock *) (fs->data + BLOCKSIZE);
 
 	if(swapit)
 		swap_badfs(fs);
