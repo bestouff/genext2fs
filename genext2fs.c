@@ -3151,7 +3151,7 @@ showhelp(void)
 	"  -i, --bytes-per-inode <bytes per inode>\n"
 	"  -N, --number-of-inodes <number of inodes>\n"
 	"  -m, --reserved-percentage <percentage of blocks to reserve>\n"
-	"  -o, --creator-os <os>      'linux', 'hurd', 'freebsd' or a numerical value (default '" CREATOR_OS_NAME "').\n"
+	"  -o, --creator-os <os>      'linux' (default), 'hurd', 'freebsd' or number.\n"
 	"  -g, --block-map <path>     Generate a block map file for this path.\n"
 	"  -e, --fill-value <value>   Fill unallocated blocks with value.\n"
 	"  -z, --allow-holes          Allow files with holes.\n"
