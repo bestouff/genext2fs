@@ -2584,8 +2584,6 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
 	free_blocks = nbblocks - overhead_per_group*nbgroups - first_block;
 	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
-	if(free_blocks < 0)
-		error_msg_and_die("too much overhead, try fewer inodes or more blocks. Note: options have changed, see --help or the man page.");
 
 	fs = alloc_fs(swapit, fname, nbblocks, NULL);
 	fs->sb = calloc(1, SUPERBLOCK_SIZE);
