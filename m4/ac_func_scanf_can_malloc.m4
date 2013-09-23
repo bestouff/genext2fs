@@ -9,7 +9,7 @@ dnl notice and this notice are preserved.
 # --------------------------------------
 AC_DEFUN([AC_FUNC_SCANF_CAN_MALLOC],
   [ AC_CHECK_HEADERS([stdlib.h])
-    AC_CACHE_CHECK([whether scanf can malloc], [ac_scanf_can_malloc],
+    AC_CACHE_CHECK([whether scanf can malloc], [ac_cv_scanf_can_malloc],
     [ AC_RUN_IFELSE(
       [ AC_LANG_PROGRAM(
         [
@@ -36,18 +36,18 @@ AC_DEFUN([AC_FUNC_SCANF_CAN_MALLOC],
   return 3;
         ])
       ],
-      [ac_scanf_can_malloc=yes],
-      [ac_scanf_can_malloc=no],
+      [ac_cv_scanf_can_malloc=yes],
+      [ac_cv_scanf_can_malloc=no],
       [
 case $host_alias in
-  *-*-linux* ) ac_scanf_can_malloc=yes ;;
-  *-*-solaris* ) ac_scanf_can_malloc=no ;;
-  *-*-darwin* ) ac_scanf_can_malloc=no ;;
-  * ) ac_scanf_can_malloc=no ;;
+  *-*-linux* ) ac_cv_scanf_can_malloc=yes ;;
+  *-*-solaris* ) ac_cv_scanf_can_malloc=no ;;
+  *-*-darwin* ) ac_cv_scanf_can_malloc=no ;;
+  * ) ac_cv_scanf_can_malloc=no ;;
 esac
       ])
     ])
-if test x$ac_scanf_can_malloc = "xyes"; then
+if test x$ac_cv_scanf_can_malloc = "xyes"; then
   AC_DEFINE([SCANF_CAN_MALLOC], 1, [Define to 1 if the scanf %a conversion format mallocs a buffer. Undefine if %a format denotes a float.])
 fi
   ])
