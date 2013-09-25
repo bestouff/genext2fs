@@ -58,6 +58,9 @@ All specified inodes receive the mtime of \fBspec-file\fP itself.
 .BI "\-b, \-\-size\-in\-blocks blocks"
 Size of the image in blocks.
 .TP
+.BI "\-B, \-\-block-size bytes"
+Size of a filesystem block in bytes.
+.TP
 .BI "\-N, \-\-number\-of\-inodes inodes"
 Maximum number of inodes.
 .TP
@@ -67,7 +70,7 @@ Set the volume label for the filesystem.
 .BI "\-i, \-\-bytes\-per\-inode ratio"
 Used to calculate the maximum number of inodes from the available blocks.
 .TP
-.BI "\-m, \-\-reserved\-percentage"
+.BI "\-m, \-\-reserved\-percentage N"
 Number of reserved blocks as a percentage of size. Reserving 0 blocks will prevent creation of the "lost+found" directory.
 .TP
 .BI "\-g, \-\-block\-map path"
