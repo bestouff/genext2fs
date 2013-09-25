@@ -3148,6 +3148,7 @@ showhelp(void)
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
 	"  -N, --number-of-inodes <number of inodes>\n"
+	"  -L, --volume-label <string>\n"
 	"  -m, --reserved-percentage <percentage of blocks to reserve>\n"
 	"  -o, --creator-os <os>      'linux' (default), 'hurd', 'freebsd' or number.\n"
 	"  -g, --block-map <path>     Generate a block map file for this path.\n"
