@@ -75,15 +75,16 @@ ftest_mount () {
 	pass ftest $@
 }
 
-# ltest_mount - Exercise the -d option of genext2fs, with symlinks.
+# ltest_mount - Exercise the -d option of genext2fs, with symlink.
 ltest_mount () {
+	appendage=$3
 	lgen $@
 	test_common
 	cd $test_mnt
-	ls 1* > ../lsout
-	cat symlink > ../fout
+	readlink symlink > ../lsout
 	cd ..
-	test -s fout || fail
+	test -s lsout || fail
+	echo 12345678901234567890123456789012345678901234567890$appendage > fout
 	diff fout lsout || fail
 	pass ltest $@
 }

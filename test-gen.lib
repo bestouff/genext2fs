@@ -53,8 +53,8 @@ fgen () {
 	./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
 }
 
-# lgen - Exercises the -d option of genext2fs, with symlinks.
-# Creates an image with a file and a symlink.
+# lgen - Exercises the -d option of genext2fs, with symlink.
+# Creates an image with a symlink of variable length.
 # NB: some systems including early versions of Mac OS X cannot
 # change symlink timestamps; this test will fail on those systems.
 lgen () {
@@ -63,9 +63,8 @@ lgen () {
 	mkdir $test_dir || exit 1
 	cd $test_dir
 	target=12345678901234567890123456789012345678901234567890$appendage
-	echo $target > $target
 	ln -s $target symlink
-	TZ=UTC-11 touch -h -t 201309241353.59 $target symlink .
+	TZ=UTC-11 touch -h -t 201309241353.59 symlink .
 	cd ..
 	./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -f -o Linux -q $test_img
 }
