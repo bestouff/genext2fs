@@ -709,24 +709,9 @@ swap_gd(groupdescriptor *gd)
 static void
 swap_nod(inode *nod)
 {
-	uint32 nblk;
-
 #define this nod
 	inode_decl
 #undef this
-
-	// block and character inodes store the major and minor in the
-	// i_block, so we need to unswap to get those.  Also, if it's
-	// zero iblocks, put the data back like it belongs.
-	nblk = nod->i_blocks / INOBLK;
-	if ((nod->i_size && !nblk)
-	    || ((nod->i_mode & FM_IFBLK) == FM_IFBLK)
-	    || ((nod->i_mode & FM_IFCHR) == FM_IFCHR))
-	{
-		int i;
-		for(i = 0; i <= EXT2_TIND_BLOCK; i++)
-			nod->i_block[i] = swab32(nod->i_block[i]);
-	}
 }
 
 static void
@@ -1988,8 +1973,13 @@ mknod_fs(filesystem *fs, uint32 parent_nod, const char *name, uint16 mode, uint1
 		break;
 	case FM_IFBLK:
 	case FM_IFCHR:
-		((uint8*)node->i_block)[0] = minor;
-		((uint8*)node->i_block)[1] = major;
+		if (fs->swapit) {
+			((uint8*)node->i_block)[3] = minor;
+			((uint8*)node->i_block)[2] = major;
+		} else {
+			((uint8*)node->i_block)[0] = minor;
+			((uint8*)node->i_block)[1] = major;
+		}
 		break;
 	case FM_IFDIR:
 		add2dir(fs, nod, nod, ".");
@@ -2015,6 +2005,15 @@ mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
 	return mknod_fs(fs, parent_nod, name, mode|FM_IFDIR, uid, gid, 0, 0, ctime, mtime);
 }
 
+// byte swapping for symlinks
+static inline void
+swab32_into(uint32 *dst, uint32 *src, size_t n)
+{
+	size_t i;
+	for(i = 0; i < n; i++)
+		dst[i] = swab32(src[i]);
+}
+
 // make a symlink
 static uint32
 mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint8 *b, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
@@ -2026,15 +2025,15 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 
 	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
 	node->i_size = size;
-	if(size < 4 * (EXT2_TIND_BLOCK+1))
-	{
-		strncpy((char*)node->i_block, (char*)b, size);
-		((char*)node->i_block)[size+1] = '\0';
-		inode_pos_finish(fs, &ipos);
-		put_nod(ni);
-		return nod;
-	}
-	extend_inode_blk(fs, &ipos, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+
+	if (size < 4 * (EXT2_TIND_BLOCK + 1))
+		if (fs->swapit)
+			swab32_into(node->i_block, (uint32 *)b, EXT2_TIND_BLOCK + 1);
+		else
+			memcpy(node->i_block, b, 4 * (EXT2_TIND_BLOCK + 1));
+	else
+		extend_inode_blk(fs, &ipos, b, rndup(size, BLOCKSIZE) / BLOCKSIZE);
+
 	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
 	return nod;
@@ -2812,8 +2811,13 @@ print_dev(filesystem *fs, uint32 nod)
 	int minor, major;
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
-	minor = ((uint8*)node->i_block)[0];
-	major = ((uint8*)node->i_block)[1];
+	if (fs->swapit) {
+		minor = ((uint8*)node->i_block)[3];
+		major = ((uint8*)node->i_block)[2];
+	} else {
+		minor = ((uint8*)node->i_block)[0];
+		major = ((uint8*)node->i_block)[1];
+	}
 	put_nod(ni);
 	printf("major: %d, minor: %d\n", major, minor);
 }
@@ -2848,10 +2852,18 @@ print_link(filesystem *fs, uint32 nod)
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
 
-	if(!node->i_blocks)
-		printf("links to '%s'\n", (char*)node->i_block);
-	else
-	{
+	if (!node->i_blocks) {
+		if (fs->swapit) {
+			uint32 *buf = malloc(4 * (EXT2_TIND_BLOCK + 1));
+			if (buf == NULL)
+				error_msg_and_die(memory_exhausted);
+			swab32_into(buf, node->i_block, EXT2_TIND_BLOCK + 1);
+			printf("links to '%s'\n", (char*) buf);
+			free(buf);
+		} else {
+			printf("links to '%s'\n", (char*) node->i_block);
+		}
+	} else {
 		printf("links to '");
 		write_blocks(fs, nod, stdout);
 		printf("'\n");
