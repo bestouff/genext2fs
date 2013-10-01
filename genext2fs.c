@@ -2683,7 +2683,7 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 			       0, 0, fs_timestamp, fs_timestamp);
 		b = get_workblk();
 		memset(b, 0, BLOCKSIZE);
-		((directory*)b)->d_rec_len = BLOCKSIZE;
+		((directory*)b)->d_rec_len = swapit ? swab16(BLOCKSIZE) : BLOCKSIZE;
 		inode_pos_init(fs, &ipos, nod, INODE_POS_EXTEND, NULL);
 		// It is always 16 blocks to start out with
 		for(i = 1; i < 16; i++)
