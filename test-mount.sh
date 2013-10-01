@@ -4,92 +4,107 @@
 # in test.sh, or if you don't care about digests and you just
 # want to see some fsck results. Should be run as root.
 
+# Each test here creates a test image, verifies it and prints
+# the command line for use in test.sh for regression testing.
+
 set -e
 
 . ./test-gen.lib
 
+test_mnt=t_mnt
+
+test_common () {
+	/sbin/e2fsck -fn $test_img || fail
+	mkdir $test_mnt
+	mount -t ext2 -o ro,loop $test_img $test_mnt || fail
+}
+
 test_cleanup () {
-	umount mnt 2>/dev/null || true
-	rm -rf mnt fout lsout
+	umount $test_mnt
+	rmdir $test_mnt
+	rm -f fout lsout
 }
 
 fail () {
-	echo FAILED
+	echo FAIL
 	test_cleanup
 	gen_cleanup
 	exit 1
 }
 
 pass () {
+	cmd=$1
+	shift
 	md5=`calc_digest`
-	echo PASSED
-	echo $@ $md5
+	echo PASS
+	echo $cmd $md5 $@
 	test_cleanup
 	gen_cleanup
 }
 
-# dtest-mount - Exercise the -d directory option of genext2fs
-# Creates an image with a file of given size, verifies it
-# and returns the command line with which to invoke dtest()
-# Usage: dtest-mount file-size number-of-blocks 
+# dtest_mount - Exercise the -d option of genext2fs.
 dtest_mount () {
-	size=$1; blocks=$2; blocksz=$3;
-	echo Testing $blocks blocks of $blocksz bytes with file of size $size
-	dgen $size $blocks $blocksz
-	/sbin/e2fsck -fn ext2.img || fail
-	mkdir -p mnt
-	mount -t ext2 -o ro,loop ext2.img mnt || fail
-	if (! [ -f mnt/file.$size ]) || \
-	      [ $size != "`ls -al mnt | grep file.$size |
-	                                awk '{print $5}'`" ] ; then
-		fail
-	fi
-	pass dtest $size $blocks $blocksz
+	size=$3
+	dgen $@
+	test_common
+	test -f $test_mnt/file.$size || fail
+	test $size = "`ls -al $test_mnt | \
+	               grep file.$size | \
+	               awk '{print $5}'`" || fail
+	pass dtest $@
 }
 
-# ftest-mount - Exercise the -f spec-file option of genext2fs
-# Creates an image with the devices mentioned in the given spec 
-# file, verifies it, and returns the command line with which to
-# invoke ftest()
-# Usage: ftest-mount spec-file number-of-blocks 
+# ftest_mount - Exercise the -D option of genext2fs.
 ftest_mount () {
-	fname=$1; blocks=$2 
-	echo Testing with devices file $fname
-	fgen $fname $blocks
-	/sbin/e2fsck -fn ext2.img || fail
-	mkdir -p mnt
-	mount -t ext2 -o ro,loop ext2.img mnt || fail
-	[ -d mnt/dev ] || fail
+	fname=$3
+	fgen $@
+	test_common
+	test -d $test_mnt/dev || fail
 	# Exclude those devices that have interpolated
 	# minor numbers, as being too hard to match.
 	egrep -v "(hda|hdb|tty|loop|ram|ubda)" $fname | \
 		grep '^[^	#]*	[bc]' | \
 		awk '{print $1,$4,$5,$6","$7}'| \
 		sort -d -k3.6 > fout
-	ls -aln mnt/dev | \
+	ls -aln $test_mnt/dev | \
 		egrep -v "(hda|hdb|tty|loop|ram|ubda)" | \
 		grep ^[bc] | \
 		awk '{ print "/dev/"$10,$3,$4,$5$6}' | \
 		sort -d -k3.6 > lsout
 	diff fout lsout || fail
-	pass ftest $fname $blocks
+	pass ftest $@
 }
 
-dtest_mount 0 4096 1024
-dtest_mount 0 2048 2048
-dtest_mount 0 1024 4096
-dtest_mount 0 8193 1024
-dtest_mount 0 8194 1024
-dtest_mount 0 8193 4096
-dtest_mount 0 8194 2048
-dtest_mount 1 4096 1024
-dtest_mount 1 1024 4096
-dtest_mount 12288 4096 1024
-dtest_mount 274432 4096 1024
-dtest_mount 8388608 9000 1024
-dtest_mount 8388608 4500 2048
-dtest_mount 8388608 2250 4096
-dtest_mount 16777216 20000 1024
-dtest_mount 16777216 10000 2048
+# ltest_mount - Exercise the -d option of genext2fs, with symlinks.
+ltest_mount () {
+	lgen $@
+	test_common
+	cd $test_mnt
+	ls 1* > ../lsout
+	cat symlink > ../fout
+	cd ..
+	test -s fout || fail
+	diff fout lsout || fail
+	pass ltest $@
+}
 
-ftest_mount device_table.txt 4096 
+dtest_mount 4096 1024 0
+dtest_mount 2048 2048 0
+dtest_mount 1024 4096 0
+dtest_mount 8193 1024 0
+dtest_mount 8194 1024 0
+dtest_mount 8193 4096 0
+dtest_mount 8194 2048 0
+dtest_mount 4096 1024 1
+dtest_mount 1024 4096 1
+dtest_mount 4096 1024 12288
+dtest_mount 4096 1024 274432
+dtest_mount 9000 1024 8388608
+dtest_mount 4500 2048 8388608
+dtest_mount 2250 4096 8388608
+dtest_mount 20000 1024 16777216
+dtest_mount 10000 2048 16777216
+ftest_mount 4096 default device_table.txt
+ltest_mount 200 1024 123456789
+ltest_mount 200 1024 1234567890
+ltest_mount 200 4096 12345678901
