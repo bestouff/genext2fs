@@ -1196,9 +1196,10 @@ typedef struct
 	directory d;
 	filesystem *fs;
 	uint32 nod;
-	directory *last_d;
+	uint8 *last_d;
 	uint8 *b;
 	blk_info *bi;
+	int need_flush;
 } dirwalker;
 
 // Start a directory walk on the given inode.  You must pass in a
@@ -1210,7 +1211,8 @@ get_dir(filesystem *fs, uint32 nod, dirwalker *dw)
 	dw->fs = fs;
 	dw->b = get_blk(fs, nod, &dw->bi);
 	dw->nod = nod;
-	dw->last_d = (directory *) dw->b;
+	dw->last_d = dw->b;
+	dw->need_flush = 1;
 
 	memcpy(&dw->d, dw->last_d, sizeof(directory));
 	if (fs->swapit)
@@ -1222,14 +1224,19 @@ get_dir(filesystem *fs, uint32 nod, dirwalker *dw)
 static inline directory *
 next_dir(dirwalker *dw)
 {
-	directory *next_d = (directory *)((int8*)dw->last_d + dw->d.d_rec_len);
+	uint8 *next_d = dw->last_d + dw->d.d_rec_len;
 
-	if (dw->fs->swapit)
-		swap_dir(&dw->d);
-	memcpy(dw->last_d, &dw->d, sizeof(directory));
+	if (dw->need_flush) {
+		if (dw->fs->swapit)
+			swap_dir(&dw->d);
+		memcpy(dw->last_d, &dw->d, sizeof(directory));
+	}
 
-	if (((int8 *) next_d) >= ((int8 *) dw->b + BLOCKSIZE))
+	if (next_d - dw->b >= BLOCKSIZE) {
+		// no more directories in block b
+		dw->need_flush = 0;
 		return NULL;
+	}
 
 	dw->last_d = next_d;
 	memcpy(&dw->d, next_d, sizeof(directory));
@@ -1242,9 +1249,12 @@ next_dir(dirwalker *dw)
 static inline void
 put_dir(dirwalker *dw)
 {
-	if (dw->fs->swapit)
-		swap_dir(&dw->d);
-	memcpy(dw->last_d, &dw->d, sizeof(directory));
+	if (dw->need_flush) {
+		// walk ended before reaching the end of block b
+		if (dw->fs->swapit)
+			swap_dir(&dw->d);
+		memcpy(dw->last_d, &dw->d, sizeof(directory));
+	}
 
 	if (dw->nod == 0)
 		free_workblk(dw->b);
@@ -1262,7 +1272,8 @@ new_dir(filesystem *fs, uint32 dnod, const char *name, int nlen, dirwalker *dw)
 	dw->fs = fs;
 	dw->b = get_workblk();
 	dw->nod = 0;
-	dw->last_d = (directory *) dw->b;
+	dw->last_d = dw->b;
+	dw->need_flush = 1;
 	d = &dw->d;
 	d->d_inode = dnod;
 	d->d_rec_len = BLOCKSIZE;
@@ -1287,7 +1298,7 @@ shrink_dir(dirwalker *dw, uint32 nod, const char *name, int nlen)
 		swap_dir(&dw->d);
 	memcpy(dw->last_d, &dw->d, sizeof(directory));
 
-	dw->last_d = (directory *) (((int8 *) dw->last_d) + preclen);
+	dw->last_d = dw->last_d + preclen;
 	d->d_rec_len = reclen;
 	d->d_inode = nod;
 	d->d_name_len = nlen;
