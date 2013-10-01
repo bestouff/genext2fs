@@ -831,36 +831,6 @@ xstrdup(const char *s)
 	return t;
 }
 
-static void *
-xrealloc(void *ptr, size_t size)
-{
-	ptr = realloc(ptr, size);
-	if (ptr == NULL && size != 0)
-		error_msg_and_die(memory_exhausted);
-	return ptr;
-}
-
-static char *
-xreadlink(const char *path)
-{
-	static const int GROWBY = 80; /* how large we will grow strings by */
-
-	char *buf = NULL;
-	int bufsize = 0, readsize = 0;
-
-	do {
-		buf = xrealloc(buf, bufsize += GROWBY);
-		readsize = readlink(path, buf, bufsize); /* 1st try */
-		if (readsize == -1) {
-			perror_msg_and_die("%s:%s", app_name, path);
-		}
-	}
-	while (bufsize < readsize + 1);
-
-	buf[readsize] = '\0';
-	return buf;
-}
-
 int
 is_hardlink(filesystem *fs, ino_t inode)
 {
@@ -2398,8 +2368,13 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					nod = mknod_fs(fs, this_nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
-					lnk = xreadlink(dent->d_name);
-					mklink_fs(fs, this_nod, name, st.st_size, (uint8*)lnk, uid, gid, ctime, mtime);
+					lnk = calloc(1, rndup(st.st_size, BLOCKSIZE));
+					if (lnk == NULL)
+						error_msg_and_die(memory_exhausted);
+					if (readlink(dent->d_name, lnk, st.st_size) > 0)
+						mklink_fs(fs, this_nod, name, st.st_size, (uint8*)lnk, uid, gid, ctime, mtime);
+					else
+						error_msg("readlink: %s", dent->d_name);
 					free(lnk);
 					break;
 				case S_IFREG:
