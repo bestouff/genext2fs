@@ -1205,6 +1205,7 @@ typedef struct
 // Start a directory walk on the given inode.  You must pass in a
 // dirwalker structure, then use that dirwalker for future operations.
 // Call put_dir when you are done walking the directory.
+// After put_dir, do not use the old pointer returned by get_dir or next_dir.
 static inline directory *
 get_dir(filesystem *fs, uint32 nod, dirwalker *dw)
 {
@@ -1917,8 +1918,9 @@ find_dir(filesystem *fs, uint32 nod, const char * name)
 		dirwalker dw;
 		for (d = get_dir(fs, bk, &dw); d; d=next_dir(&dw))
 			if(d->d_inode && (nlen == d->d_name_len) && !strncmp(dir_name(&dw), name, nlen)) {
+				uint32 result = d->d_inode;
 				put_dir(&dw);
-				return d->d_inode;
+				return result;
 			}
 		put_dir(&dw);
 	}
