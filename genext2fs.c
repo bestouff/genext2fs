@@ -935,7 +935,6 @@ out:
 	return bi->b;
 }
 
-// return a given inode from a filesystem
 static inline void
 put_blk(blk_info *bi)
 {
@@ -1138,7 +1137,8 @@ inode_freed(cache_link *elem)
 
 #define INODES_PER_BLOCK (BLOCKSIZE / sizeof(inode))
 
-// return a given inode from a filesystem
+// Return a given inode from a filesystem.  Make sure to call
+// put_nod when you are done with it.
 static inline inode *
 get_nod(filesystem *fs, uint32 nod, nod_info **rni)
 {
