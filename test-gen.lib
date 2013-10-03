@@ -59,7 +59,7 @@ fgen () {
 # change symlink timestamps; this test will fail on those systems.
 lgen () {
 	blocks=$1; blocksz=$2; appendage=$3
-	echo Testing $blocks blocks of $blocksz bytes with file and symlink ...$appendage
+	echo Testing $blocks blocks of $blocksz bytes with symlink ...$appendage
 	mkdir $test_dir || exit 1
 	cd $test_dir
 	target=12345678901234567890123456789012345678901234567890$appendage
