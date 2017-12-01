@@ -135,7 +135,7 @@ This example builds a filesystem from all the files in *src*, then
 device nodes are created based on the contents of the file
 *devicetable.txt*. Entries in the device table take the form of:
 
-<name> <type> <mode> <uid> <gid> <major> <minor> <start> <inc> <count>
+              <name> <type> <mode> <uid> <gid> <major> <minor> <start> <inc> <count>
 
 where name is the file name and type can be one of:
 
