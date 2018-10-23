@@ -3025,7 +3025,7 @@ out:
 static void
 print_fs(filesystem *fs)
 {
-	uint32 i;
+	uint32 i, j;
 	blk_info *bi;
 	groupdescriptor *gd;
 	gd_info *gi;
@@ -3058,9 +3058,9 @@ print_fs(filesystem *fs)
 		printf("inode bitmap allocation:\n");
 		ibm = GRP_GET_GROUP_IBM(fs, gd, &bi);
 		print_bm(ibm, fs->sb->s_inodes_per_group);
-		for (i = 1; i <= fs->sb->s_inodes_per_group; i++)
-			if (allocated(ibm, i))
-				print_inode(fs, i);
+		for (j = 1; j <= fs->sb->s_inodes_per_group; j++)
+			if (allocated(ibm, j))
+				print_inode(fs, j);
 		GRP_PUT_GROUP_IBM(bi);
 		put_gd(gi);
 	}
