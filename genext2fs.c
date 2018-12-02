@@ -4,7 +4,7 @@
 // ext2 filesystem generator for embedded systems
 // Copyright (C) 2000 Xavier Bestel <xavier.bestel@free.fr>
 //
-// Please direct support requests to genext2fs-devel@lists.sourceforge.net
+// Please direct support requests to https://github.com/bestouff/genext2fs/issues
 //
 // 'du' portions taken from coreutils/du.c in busybox:
 //	Copyright (C) 1999,2000 by Lineo, inc. and John Beppu
@@ -3161,7 +3161,7 @@ showhelp(void)
 	"  -h, --help\n"
 	"  -V, --version\n"
 	"  -v, --verbose\n\n"
-	"Report bugs to genext2fs-devel@lists.sourceforge.net\n", app_name);
+	"Report bugs to https://github.com/bestouff/genext2fs/issues\n", app_name);
 }
 
 #define MAX_DOPT 128
