@@ -2318,8 +2318,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					break;
 				case S_IFREG:
-					if((st.st_mode & S_IFMT) == S_IFREG || st.st_size > 4 * (EXT2_TIND_BLOCK+1))
-						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
