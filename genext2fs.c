@@ -3361,7 +3361,8 @@ main(int argc, char **argv)
 			{
 				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", stats.nblocks);
 				// nbblocks = stats.nblocks;
-				error_msg_and_die("number of blocks too low. Need at least %d.", stats.nblocks);
+				unsigned long minimum_blocks = stats.nblocks + stats.nblocks * reserved_frac;
+				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
 			}
 
 		nbresrvd = nbblocks * reserved_frac;
