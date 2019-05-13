@@ -166,8 +166,8 @@ static int blocksize = 1024;
 #define BLOCKS_PER_GROUP  8192
 #define INODES_PER_GROUP  8192
 /* Percentage of blocks that are reserved.*/
-#define RESERVED_BLOCKS       5/100
-#define MAX_RESERVED_BLOCKS  25/100
+#define RESERVED_BLOCKS       (5/100.)
+#define MAX_RESERVED_BLOCKS  (25/100.)
 
 /* The default value for s_creator_os. */
 #if defined(__linux__)    &&    defined(EXT2_OS_LINUX)
