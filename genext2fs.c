@@ -3359,9 +3359,9 @@ main(int argc, char **argv)
 		else
 			if(stats.nblocks > nbblocks)
 			{
-				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", stats.nblocks);
-				// nbblocks = stats.nblocks;
 				unsigned long minimum_blocks = stats.nblocks + stats.nblocks * reserved_frac;
+				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", minimum_blocks);
+				// nbblocks = minimum_blocks;
 				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
 			}
 
