@@ -3343,15 +3343,29 @@ main(int argc, char **argv)
 	}
 	else
 	{
-		if(reserved_frac == -1)
-			nbresrvd = nbblocks * RESERVED_BLOCKS;
-		else 
-			nbresrvd = nbblocks * reserved_frac;
-
-		stats.ninodes = EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
+		stats.ninodes = 0;
 		stats.nblocks = 0;
 
 		populate_fs(NULL, dopt, didx, squash_uids, squash_perms, fs_timestamp, &stats);
+
+		if(reserved_frac == -1)
+			reserved_frac = RESERVED_BLOCKS;
+
+		if(nbblocks == -1)
+		{
+			nbblocks = stats.nblocks;
+			nbblocks += nbblocks * reserved_frac;
+		}
+		else
+			if(stats.nblocks > nbblocks)
+			{
+				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", stats.nblocks);
+				// nbblocks = stats.nblocks;
+				error_msg_and_die("number of blocks too low. Need at least %d.", stats.nblocks);
+			}
+
+		nbresrvd = nbblocks * reserved_frac;
+		stats.ninodes += EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
 
 		if(nbinodes == -1)
 			nbinodes = stats.ninodes;
