@@ -166,8 +166,8 @@ static int blocksize = 1024;
 #define BLOCKS_PER_GROUP  8192
 #define INODES_PER_GROUP  8192
 /* Percentage of blocks that are reserved.*/
-#define RESERVED_BLOCKS       5/100
-#define MAX_RESERVED_BLOCKS  25/100
+#define RESERVED_BLOCKS       (5/100.)
+#define MAX_RESERVED_BLOCKS  (25/100.)
 
 /* The default value for s_creator_os. */
 #if defined(__linux__)    &&    defined(EXT2_OS_LINUX)
@@ -3343,15 +3343,30 @@ main(int argc, char **argv)
 	}
 	else
 	{
-		if(reserved_frac == -1)
-			nbresrvd = nbblocks * RESERVED_BLOCKS;
-		else 
-			nbresrvd = nbblocks * reserved_frac;
-
-		stats.ninodes = EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
+		stats.ninodes = 0;
 		stats.nblocks = 0;
 
 		populate_fs(NULL, dopt, didx, squash_uids, squash_perms, fs_timestamp, &stats);
+
+		if(reserved_frac == -1)
+			reserved_frac = RESERVED_BLOCKS;
+
+		if(nbblocks == -1)
+		{
+			nbblocks = stats.nblocks;
+			nbblocks += nbblocks * reserved_frac;
+		}
+		else
+			if(stats.nblocks > nbblocks)
+			{
+				unsigned long minimum_blocks = stats.nblocks + stats.nblocks * reserved_frac;
+				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", minimum_blocks);
+				// nbblocks = minimum_blocks;
+				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
+			}
+
+		nbresrvd = nbblocks * reserved_frac;
+		stats.ninodes += EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
 
 		if(nbinodes == -1)
 			nbinodes = stats.ninodes;
