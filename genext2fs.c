@@ -3370,6 +3370,7 @@ main(int argc, char **argv)
 			fs_timestamp = time(NULL);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes,
 			     fs_timestamp, creator_os, bigendian, fsout);
+		fs_upgrade_rev1_largefile(fs);
 	}
 	if (volumelabel != NULL)
 		strncpy((char *)fs->sb->s_volume_name, volumelabel,
