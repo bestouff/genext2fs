@@ -163,6 +163,7 @@ static int blocksize = 1024;
 #define SUPERBLOCK_SIZE		1024
 
 #define BLOCKSIZE         blocksize
+#define ADDR_PER_BLOCK    (BLOCKSIZE / sizeof(uint32))
 #define BLOCKS_PER_GROUP  8192
 #define INODES_PER_GROUP  8192
 /* Percentage of blocks that are reserved.*/
@@ -2278,6 +2279,70 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 		free(path2);
 }
 
+static long
+calc_file_alloc_blocks(unsigned long size)
+{
+	const int double_blocks = ADDR_PER_BLOCK * ADDR_PER_BLOCK;
+	long file_blocks = (size + BLOCKSIZE - 1) / BLOCKSIZE;
+	long final_file_blocks;
+
+	/* Total file data blocks:
+	 *  - direct blocks:         EXT2_NDIR_BLOCKS
+	 *  - 1st indirect blocks: + ADDR_PER_BLOCK
+	 *  - 2nd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK
+	 *  - 3rd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK
+	 *
+	 * Total blocks allocated in disk:
+	 *  - direct blocks:         EXT2_NDIR_BLOCKS
+	 *  - 1st indirect blocks: + (1 + ADDR_PER_BLOCK)
+	 *  - 2nd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK)
+	 *  - 3rd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK)
+	 */
+
+	if(file_blocks <= EXT2_NDIR_BLOCKS)
+		return file_blocks;
+
+	// All direct blocks used
+	file_blocks -= EXT2_NDIR_BLOCKS;
+	final_file_blocks = EXT2_NDIR_BLOCKS;
+
+	// Need 1st indirection
+	if(file_blocks <= ADDR_PER_BLOCK)
+	{
+		// +1 indirect block
+		final_file_blocks += 1 + file_blocks;
+		return final_file_blocks;
+	}
+
+	// All 1st indirect blocks used
+	file_blocks -= ADDR_PER_BLOCK;
+	final_file_blocks += 1 + ADDR_PER_BLOCK;
+
+	// Need 2nd indirection
+	if(file_blocks <= double_blocks)
+	{
+		int indirect_blocks = 1 + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
+		final_file_blocks += file_blocks + indirect_blocks;
+		return final_file_blocks;
+	}
+
+	// All 2nd indirect blocks used
+	file_blocks -= double_blocks;
+	final_file_blocks += 1 + double_blocks;
+
+	// Need 2rd indirection
+	if(file_blocks / double_blocks <= ADDR_PER_BLOCK)
+	{
+		//(1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK)
+		int indirect_blocks = 1 + (file_blocks + double_blocks - 1) / double_blocks
+		                        + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
+		final_file_blocks += file_blocks + indirect_blocks;
+		return final_file_blocks;
+	}
+
+	return -1;
+}
+
 // adds a tree of entries to the filesystem from current dir
 static void
 add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
@@ -2318,8 +2383,14 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					break;
 				case S_IFREG:
-					if((st.st_mode & S_IFMT) == S_IFREG || st.st_size > 4 * (EXT2_TIND_BLOCK+1))
-						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
+				{
+					int total_blocks = calc_file_alloc_blocks(st.st_size);
+					if(total_blocks == -1)
+						error_msg_and_die("%s: file too large", dent->d_name);
+					stats->nblocks += total_blocks;
+					fprintf(stderr, "Large file: %lu final blocks\n", total_blocks);
+					// Fall through
+				}
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
@@ -3353,7 +3424,12 @@ main(int argc, char **argv)
 
 		if(nbblocks == -1)
 		{
-			nbblocks = stats.nblocks;
+			/* On filesystems with 1k block size, the bootloader area uses a full
+			 * block. For 2048 and up, the superblock can be fitted into block 0.
+			 */
+			int first_block = (BLOCKSIZE == 1024);
+			/* bootloader block + superblock + data blocks */
+			nbblocks = 1 + first_block + stats.nblocks;
 			nbblocks += nbblocks * reserved_frac;
 		}
 		else
