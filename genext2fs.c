@@ -3378,8 +3378,14 @@ main(int argc, char **argv)
 			if(tmp_nbinodes > nbinodes)
 				nbinodes = tmp_nbinodes;
 		}
-		if(fs_timestamp == -1)
-			fs_timestamp = time(NULL);
+		if(fs_timestamp == -1) {
+			char *source_date_epoch = getenv("SOURCE_DATE_EPOCH");
+			if (source_date_epoch == NULL) {
+				fs_timestamp = time(NULL);
+			} else {
+				fs_timestamp = strtoll(source_date_epoch, NULL, 10);
+			}
+		}
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes,
 			     fs_timestamp, creator_os, bigendian, fsout);
 		fs_upgrade_rev1_largefile(fs);
