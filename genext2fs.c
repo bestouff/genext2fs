@@ -2193,6 +2193,18 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			continue;
 		}
 		mode &= FM_IMASK;
+		if (fs && strcmp(path, "/") == 0) {
+			// if the entry modifies the root node, don't call
+			// basename and dirname but chmod the root node
+			// directly
+			if (type != 'd') {
+				error_msg("device table line %d skipped: root node must be directory", lineno);
+				continue;
+			}
+			mode |= FM_IFDIR;
+			chmod_fs(fs, this_nod, mode, uid, gid);
+			continue;
+		}
 		path2 = strdup(path);
 		name = basename(path);
 		dir = dirname(path2);
