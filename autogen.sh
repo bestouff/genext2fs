@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 die() {
 	echo "*** $0 failed :("
