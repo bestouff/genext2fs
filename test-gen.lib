@@ -7,6 +7,7 @@
 LC_ALL=C
 export LC_ALL
 
+origin_dir="$(dirname "$(realpath "$0")")"
 test_dir=t_tmp_dir
 test_img=t_tmp_ext2.img
 
@@ -53,7 +54,7 @@ fgen () {
 	blocks=$1; fname=$3
 	echo Testing $blocks blocks with with devices file $fname
 	gen_setup
-	cp $fname $test_dir
+	cp $origin_dir/$fname $test_dir
 	TZ=UTC-11 touch -t 200502070321.43 $test_dir/$fname
 	./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
 }

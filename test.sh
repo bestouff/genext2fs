@@ -11,7 +11,8 @@
 
 set -e
 
-. ./test-gen.lib
+origin_dir="$(dirname "$(realpath "$0")")"
+. $origin_dir/test-gen.lib
 
 md5cmp () {
 	md5=`calc_digest`
