@@ -19,5 +19,5 @@ jobs:
       run: ./configure
     - name: make
       run: make
-    - name: test
-      run: ./test.sh
+    - name: make distcheck
+      run: make distcheck
