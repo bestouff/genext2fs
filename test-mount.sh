@@ -24,7 +24,7 @@ test_common () {
 test_cleanup () {
 	umount $test_mnt
 	rmdir $test_mnt
-	rm -f fout lsout
+	rm -f fout lsout stout esout
 }
 
 fail () {
@@ -68,7 +68,7 @@ ftest_mount () {
 		grep '^[^	#]*	[bc]' | \
 		awk '{print $1,$4,$5,$6","$7}'| \
 		sort -d -k3.6 > fout
-	ls -aln $test_mnt/dev | \
+		ls -aln $test_mnt/dev | \
 		egrep -v "(hda|hdb|tty|loop|ram|ubda)" | \
 		grep ^[bc] | \
 		awk '{ print "/dev/"$10,$3,$4,$5$6}' | \
@@ -77,17 +77,20 @@ ftest_mount () {
 	pass ftest $@
 }
 
-# ltest_mount - Exercise the -d option of genext2fs, with symlink.
+# ltest_mount - Exercise the -d option of genext2fs, with symlink and device table.
 ltest_mount () {
 	appendage=$3
 	lgen $@
 	test_common
 	cd $test_mnt
 	readlink symlink > ../lsout
+	stat -c "%u %g" symlink > ../stout
 	cd ..
 	test -s lsout || fail
 	echo 12345678901234567890123456789012345678901234567890$appendage > fout
 	diff fout lsout || fail
+	echo "77 7" > esout
+	diff stout esout || fail
 	pass ltest $@
 }
 
@@ -108,6 +111,7 @@ dtest_mount 2250 4096 8388608
 dtest_mount 20000 1024 16777216
 dtest_mount 10000 2048 16777216
 ftest_mount 4096 default device_table.txt
-ltest_mount 200 1024 123456789
-ltest_mount 200 1024 1234567890
-ltest_mount 200 4096 12345678901
+ltest_mount 200 1024 123456789 device_table_link.txt
+ltest_mount 200 1024 1234567890 device_table_link.txt
+ltest_mount 200 4096 12345678901 device_table_link.txt
+ltest_mount 200 4096 12345678901 device_table_link.txt

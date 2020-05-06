@@ -59,12 +59,14 @@ fgen () {
 	./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
 }
 
-# lgen - Exercises the -d option of genext2fs, with symlink.
-# Creates an image with a symlink of variable length.
+# lgen - Exercises the -d option of genext2fs, with symlink
+# and a device table
+# Creates an image with a symlink of variable length, then
+# uses a device table to change its uid/gid
 # NB: some systems including early versions of Mac OS X cannot
 # change symlink timestamps; this test will fail on those systems.
 lgen () {
-	blocks=$1; blocksz=$2; appendage=$3
+	blocks=$1; blocksz=$2; appendage=$3; devtable=$4
 	echo Testing $blocks blocks of $blocksz bytes with symlink ...$appendage
 	gen_setup
 	cd $test_dir
@@ -72,5 +74,5 @@ lgen () {
 	ln -s $target symlink
 	TZ=UTC-11 touch -h -t 201309241353.59 symlink .
 	cd ..
-	./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -f -o Linux -q $test_img
+	./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -D $devtable -f -o Linux -q $test_img
 }
