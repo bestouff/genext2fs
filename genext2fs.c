@@ -2146,9 +2146,10 @@ get_mode(struct stat *st)
 	c	Character special device file
 	b	Block special device file
 	p	Fifo (named pipe)
+	l	Symbolic link
 
-    I don't bother with symlinks (permissions are irrelevant), hard
-    links (special cases of regular files), or sockets (why bother).
+    I don't bother with hard links (special cases of regular files),
+    or sockets.
 
     Regular files must exist in the target root directory.  If a char,
     block, fifo, or directory does not exist, it will be created.
@@ -2230,6 +2231,9 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 				break;
 			case 'f':
 				mode |= FM_IFREG;
+				break;
+			case 'l':
+				mode |= FM_IFLNK;
 				break;
 			case 'p':
 				mode |= FM_IFIFO;
