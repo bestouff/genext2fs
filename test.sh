@@ -72,4 +72,3 @@ ftest 3db16dd57bd15c1c80dd6bc900411c58 4096 default device_table.txt
 ltest c21b5a3cad405197e821ba7143b0ea9b 200 1024 123456789 device_table_link.txt
 ltest 18b04b4bea2f7ebf315a116be5b92589 200 1024 1234567890 device_table_link.txt
 ltest 8aaed693b75dbdf77607f376d661027a 200 4096 12345678901 device_table_link.txt
-ltest 8aaed693b75dbdf77607f376d661027a 200 4096 12345678901 device_table_link.txt

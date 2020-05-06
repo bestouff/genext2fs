@@ -114,4 +114,3 @@ ftest_mount 4096 default device_table.txt
 ltest_mount 200 1024 123456789 device_table_link.txt
 ltest_mount 200 1024 1234567890 device_table_link.txt
 ltest_mount 200 4096 12345678901 device_table_link.txt
-ltest_mount 200 4096 12345678901 device_table_link.txt
