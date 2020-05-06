@@ -11,7 +11,12 @@ test_dir=t_tmp_dir
 test_img=t_tmp_ext2.img
 
 gen_cleanup () {
-	rm -r $test_dir $test_img
+	rm -rf $test_dir $test_img
+}
+
+gen_setup () {
+  gen_cleanup
+	mkdir $test_dir || exit 1
 }
 
 calc_digest () {
@@ -29,7 +34,7 @@ calc_digest () {
 dgen () {
 	blocks=$1; blocksz=$2; size=$3
 	echo Testing $blocks blocks of $blocksz bytes with file of size $size
-	mkdir $test_dir || exit 1
+	gen_setup
 	cd $test_dir
 	if [ x$size = x0 ]; then
 		> file.$size
@@ -47,7 +52,7 @@ dgen () {
 fgen () {
 	blocks=$1; fname=$3
 	echo Testing $blocks blocks with with devices file $fname
-	mkdir $test_dir || exit 1
+	gen_setup
 	cp $fname $test_dir
 	TZ=UTC-11 touch -t 200502070321.43 $test_dir/$fname
 	./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
@@ -60,7 +65,7 @@ fgen () {
 lgen () {
 	blocks=$1; blocksz=$2; appendage=$3
 	echo Testing $blocks blocks of $blocksz bytes with symlink ...$appendage
-	mkdir $test_dir || exit 1
+	gen_setup
 	cd $test_dir
 	target=12345678901234567890123456789012345678901234567890$appendage
 	ln -s $target symlink

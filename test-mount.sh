@@ -15,6 +15,7 @@ test_mnt=t_mnt
 
 test_common () {
 	/sbin/e2fsck -fn $test_img || fail
+  rm -rf $test_mnt
 	mkdir $test_mnt
 	mount -t ext2 -o ro,loop $test_img $test_mnt || fail
 }
