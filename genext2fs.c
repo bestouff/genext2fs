@@ -150,6 +150,17 @@
 
 #include "cache.h"
 
+#define FSLAYER_DIR   0
+#define FSLAYER_TABLE 1
+#ifdef HAVE_LIBARCHIVE
+#define FSLAYER_TAR   2
+#endif
+
+struct fslayer {
+	int type;
+	char * path;
+};
+
 struct stats {
 	unsigned long nblocks;
 	unsigned long ninodes;
@@ -3103,44 +3114,49 @@ finish_fs(filesystem *fs)
 }
 
 static void
-populate_fs(filesystem *fs, char **dopt, int didx, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
 	int i;
-	for(i = 0; i < didx; i++)
+	for(i = 0; i < nlayers; i++)
 	{
 		struct stat st;
 		FILE *fh;
 		int pdir;
 		char *pdest;
 		uint32 nod = EXT2_ROOT_INO;
-		if(fs)
-			if((pdest = strchr(dopt[i], ':')))
-			{
-				*(pdest++) = 0;
-				if(!(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
-					error_msg_and_die("path %s not found in filesystem", pdest);
-			}
-		stat(dopt[i], &st);
-		switch(st.st_mode & S_IFMT)
+		if((pdest = strchr(fslayers[i].path, ':')))
 		{
-			case S_IFREG:
-				fh = xfopen(dopt[i], "rb");
+			*(pdest++) = 0;
+			if(fs && !(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
+				error_msg_and_die("path %s not found in filesystem", pdest);
+		}
+		stat(fslayers[i].path, &st);
+		switch(fslayers[i].type)
+		{
+			case FSLAYER_TABLE:
+				if((st.st_mode & S_IFMT) != S_IFREG)
+					error_msg_and_die("%s should be a file", fslayers[i].path);
+				if(fs)
+					printf("nodes fixup and creation from device table %s\n", fslayers[i].path);
+				fh = xfopen(fslayers[i].path, "rb");
 				add2fs_from_file(fs, nod, fh, fs_timestamp, stats);
 				fclose(fh);
 				break;
-			case S_IFDIR:
+			case FSLAYER_DIR:
+				if((st.st_mode & S_IFMT) != S_IFDIR)
+					error_msg_and_die("%s should be a directory", fslayers[i].path);
+				if(fs)
+					printf("copying from directory %s\n", fslayers[i].path);
 				if((pdir = open(".", O_RDONLY)) < 0)
 					perror_msg_and_die(".");
-				if(chdir(dopt[i]) < 0)
-					perror_msg_and_die(dopt[i]);
+				if(chdir(fslayers[i].path) < 0)
+					perror_msg_and_die(fslayers[i].path);
 				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
 				if(fchdir(pdir) < 0)
 					perror_msg_and_die("fchdir");
 				if(close(pdir) < 0)
 					perror_msg_and_die("close");
 				break;
-			default:
-				error_msg_and_die("%s is neither a file nor a directory", dopt[i]);
 		}
 	}
 }
@@ -3157,8 +3173,8 @@ showhelp(void)
 	fprintf(stderr, "Usage: %s [options] image\n"
 	"Create an ext2 filesystem image from directories/files\n\n"
 	"  -x, --starting-image <image>\n"
-	"  -d, --root <directory>\n"
-	"  -D, --devtable <file>\n"
+	"  -d, --root <directory>     Copy from a local directory\n"
+	"  -D, --devtable <file>      Add or fixup nodes from a device table\n"
 	"  -B, --block-size <bytes>\n"
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
@@ -3217,8 +3233,8 @@ main(int argc, char **argv)
 	int creator_os = CREATOR_OS;
 	char * fsout = "-";
 	char * fsin = 0;
-	char * dopt[MAX_DOPT];
-	int didx = 0;
+	struct fslayer layers[MAX_DOPT];
+	int nlayers = 0;
 	char * gopt[MAX_GOPT];
 	int gidx = 0;
 	int verbose = 0;
@@ -3273,8 +3289,12 @@ main(int argc, char **argv)
 				fsin = optarg;
 				break;
 			case 'd':
+				layers[nlayers].type = FSLAYER_DIR;
+				layers[nlayers++].path = optarg;
+				break;
 			case 'D':
-				dopt[didx++] = optarg;
+				layers[nlayers].type = FSLAYER_TABLE;
+				layers[nlayers++].path = optarg;
 				break;
 			case 'B':
 				blocksize = SI_atof(optarg);
@@ -3347,6 +3367,7 @@ main(int argc, char **argv)
 
 	if(fsin)
 	{
+		printf("starting from existing image %s", fsin);
 		if(strcmp(fsin, "-"))
 		{
 			FILE * fh = xfopen(fsin, "rb");
@@ -3366,7 +3387,7 @@ main(int argc, char **argv)
 		stats.ninodes = EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
 		stats.nblocks = 0;
 
-		populate_fs(NULL, dopt, didx, squash_uids, squash_perms, fs_timestamp, &stats);
+		populate_fs(NULL, layers, nlayers, squash_uids, squash_perms, fs_timestamp, &stats);
 
 		if(nbinodes == -1)
 			nbinodes = stats.ninodes;
@@ -3398,7 +3419,7 @@ main(int argc, char **argv)
 		strncpy((char *)fs->sb->s_volume_name, volumelabel,
 			sizeof(fs->sb->s_volume_name));
 	
-	populate_fs(fs, dopt, didx, squash_uids, squash_perms, fs_timestamp, NULL);
+	populate_fs(fs, layers, nlayers, squash_uids, squash_perms, fs_timestamp, NULL);
 
 	if(emptyval) {
 		uint32 b;
