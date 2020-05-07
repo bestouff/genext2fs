@@ -86,7 +86,7 @@ Fill unallocated blocks with value.
 Make files with holes.
 .TP
 .BI "\-f, \-\-faketime"
-Use a timestamp of 0 for inode and filesystem creation, instead of the present. Useful for testing.
+Use a timestamp of 0 for inode and filesystem creation, instead of the present. Useful for testing. See also SOURCE_DATE_EPOCH.
 .TP
 .BI "\-q, \-\-squash"
 Squash permissions and owners (same as -P -U).
@@ -107,6 +107,10 @@ Print genext2fs version.
 .TP
 .BI "\-h, \-\-help"
 Display help.
+.SH ENVIRONMENT
+.TP
+.BI SOURCE_DATE_EPOCH
+Standardized date for reproducible builds, see https://reproducible-builds.org/docs/source-date-epoch/ for more information.
 .SH EXAMPLES
 
 .EX
