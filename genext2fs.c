@@ -166,9 +166,19 @@ struct stats {
 	unsigned long ninodes;
 };
 
+
+// used types
+
+typedef signed char int8;
+typedef unsigned char uint8;
+typedef signed short int16;
+typedef unsigned short uint16;
+typedef signed int int32;
+typedef unsigned int uint32;
+
 // block size
 
-static int blocksize = 1024;
+static uint32 blocksize = 1024;
 
 #define SUPERBLOCK_OFFSET	1024
 #define SUPERBLOCK_SIZE		1024
@@ -321,16 +331,6 @@ static int blocksize = 1024;
 //Given a block number find its offset within the block bitmap that covers it
 #define GRP_BBM_OFFSET(fs,blk) \
 	( (blk) - GRP_GROUP_OF_BLOCK((fs),(blk))*(fs)->sb->s_blocks_per_group )
-
-
-// used types
-
-typedef signed char int8;
-typedef unsigned char uint8;
-typedef signed short int16;
-typedef unsigned short uint16;
-typedef signed int int32;
-typedef unsigned int uint32;
 
 
 // the GNU C library has a wonderful scanf("%as", string) which will
@@ -736,7 +736,7 @@ swap_dir(directory *dir)
 static void
 swap_block(block b)
 {
-	int i;
+	uint32 i;
 	uint32 *blk = (uint32*)b;
 	for(i = 0; i < BLOCKSIZE/4; i++)
 		blk[i] = swab32(blk[i]);
@@ -1350,7 +1350,7 @@ allocate(block b, uint32 item)
 {
 	if(!item)
 	{
-		int i;
+		uint32 i;
 		uint8 bits;
 		for(i = 0; i < BLOCKSIZE; i++)
 			if((bits = b[i]) != (uint8)-1)
@@ -1849,7 +1849,7 @@ add2dir(filesystem *fs, uint32 dnod, uint32 nod, const char* name)
 	uint32 bk;
 	directory *d;
 	dirwalker dw;
-	int reclen, nlen;
+	uint32 reclen, nlen;
 	inode *node;
 	inode *pnode;
 	nod_info *dni, *ni;
@@ -2834,7 +2834,7 @@ write_blocks(filesystem *fs, uint32 nod, FILE* f)
 		if(fsize <= 0)
 			error_msg_and_die("wrong size while saving inode %d", nod);
 		if(fwrite(get_blk(fs, bk, &bi),
-			  (fsize > BLOCKSIZE) ? BLOCKSIZE : fsize, 1, f) != 1)
+			  ((uint32)fsize > BLOCKSIZE) ? BLOCKSIZE : (uint32)fsize, 1, f) != 1)
 			error_msg_and_die("error while saving inode %d", nod);
 		put_blk(bi);
 		fsize -= BLOCKSIZE;
