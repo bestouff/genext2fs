@@ -3124,13 +3124,12 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 		int pdir;
 		char *pdest;
 		uint32 nod = EXT2_ROOT_INO;
-		if(fs)
-			if((pdest = strchr(fslayers[i].path, ':')))
-			{
-				*(pdest++) = 0;
-				if(!(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
-					error_msg_and_die("path %s not found in filesystem", pdest);
-			}
+		if((pdest = strchr(fslayers[i].path, ':')))
+		{
+			*(pdest++) = 0;
+			if(fs && !(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
+				error_msg_and_die("path %s not found in filesystem", pdest);
+		}
 		stat(fslayers[i].path, &st);
 		switch(fslayers[i].type)
 		{
