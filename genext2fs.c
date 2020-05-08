@@ -150,15 +150,36 @@
 
 #include "cache.h"
 
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
+
 #define FSLAYER_DIR   0
 #define FSLAYER_TABLE 1
-#ifdef HAVE_LIBARCHIVE
 #define FSLAYER_TAR   2
-#endif
 
 struct fslayer {
 	int type;
 	char * path;
+};
+
+#define TAR_BLOCKSIZE 512
+#define TAR_FULLFILENAME (100 + 155)
+
+struct tar_header {
+	char filename[100];
+	char filemode[8];
+	char uid[8];
+	char gid[8];
+	char filesize[12];
+	char mtime[12];
+	char checksum[8];
+	char filetype;
+	char linkedname[100];
+	char ustar[8];
+	char owner[32];
+	char group[32];
+	char major[8];
+	char minor[8];
+	char prefix[155];
 };
 
 struct stats {
@@ -2076,13 +2097,13 @@ fs_upgrade_rev1_largefile(filesystem *fs)
 
 // make a file from a FILE*
 static uint32
-mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, FILE *f, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, FILE *f, off_t size, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
 {
 	uint8 * b;
 	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
 	nod_info *ni;
 	inode *node = get_nod(fs, nod, &ni);
-	off_t size = 0;
+	off_t remaining_size = size;
 	size_t readbytes;
 	inode_pos ipos;
 	int fullsize;
@@ -2091,14 +2112,14 @@ mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, FILE
 	if (!b)
 		error_msg_and_die("mkfile_fs: out of memory");
 	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
-	readbytes = fread(b, 1, CB_SIZE, f);
+	readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), f);
 	while (readbytes) {
+		remaining_size -= readbytes;
 		fullsize = rndup(readbytes, BLOCKSIZE);
 		// Fill to end of block with zeros.
 		memset(b + readbytes, 0, fullsize - readbytes);
 		extend_inode_blk(fs, &ipos, b, fullsize / BLOCKSIZE);
-		size += readbytes;
-		readbytes = fread(b, 1, CB_SIZE, f);
+		readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), f);
 	}
 	if (size > 0x7fffffff) {
 		if (fs->sb->s_rev_level < 1)
@@ -2144,6 +2165,198 @@ get_mode(struct stat *st)
 	if(st->st_mode & S_ISVTX)
 		mode |= FM_ISVTX;
 	return mode;
+}
+
+#define OCTAL_READ(field) octal_read(field, sizeof field)
+
+size_t octal_read(char *field, size_t size)
+{
+	// TODO handle 256-based encoding if high-bit set
+	size_t i, res = 0;
+	for(i = 0; i < size; i++)
+	{
+		char c = field[i];
+		if(c == ' ')
+			continue;
+		if(c < '0' || c > '7')
+			break;
+		res = 8 * res + c - '0';
+	}
+	return res;
+}
+
+int is_zero(char *block, size_t size)
+{
+	size_t i;
+	for(i = 0; i < size; i++)
+		if(block[i])
+			return 0;
+	return 1;
+}
+
+static void
+add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+{
+	uint32 nod, hlnod, oldnod;
+	uint32 uid, gid, mode, major, minor, ctime, mtime;
+	char buffer[TAR_BLOCKSIZE];
+	char path[TAR_FULLFILENAME], *path2 = NULL, *dir, *name;
+	char type;
+	struct tar_header *tarhead = (void*)buffer;
+	size_t filesize, padding;
+	int nbnull = 0;
+
+	size_t readbytes;
+	while(1)
+	{
+		if (path2) {
+			free(path2);
+			path2 = NULL;
+		}
+		readbytes = fread(buffer, 1, TAR_BLOCKSIZE, fh);
+		if (!readbytes)
+			break;
+		if (readbytes != TAR_BLOCKSIZE)
+			error_msg_and_die("tarball has wrong size");
+		if (is_zero(buffer, sizeof buffer))
+		{
+			if (nbnull++)
+				break;
+			continue;
+		} else
+			nbnull = 0;
+		snprintf(path, sizeof path, "%s%s", tarhead->prefix, tarhead->filename);
+		printf("filename: %s\n", path);
+		filesize = OCTAL_READ(tarhead->filesize);
+		padding = rndup(filesize, TAR_BLOCKSIZE) - filesize;
+		printf("filesize: %s = %ld\n", tarhead->filesize, filesize);
+		printf("padding: %ld\n", padding);
+		printf("mode: %o\n", (int)OCTAL_READ(tarhead->filemode));
+		printf("uid: %ld\n", OCTAL_READ(tarhead->uid));
+		mtime = OCTAL_READ(tarhead->mtime);
+		ctime = fs_timestamp;
+		uid = OCTAL_READ(tarhead->uid);
+		gid = OCTAL_READ(tarhead->gid);
+		mode = OCTAL_READ(tarhead->filemode) & FM_IMASK;
+		major = OCTAL_READ(tarhead->major);
+		minor = OCTAL_READ(tarhead->minor);
+		type = tarhead->filetype;
+		printf("mtime: %d\n", mtime);
+		if (squash_uids)
+			uid = gid = 0;
+		if (squash_perms)
+			mode &= ~(FM_IRWXG | FM_IRWXO);
+		// TODO checksum
+		// TODO ustar
+		if (stats)
+		{
+			switch (type)
+			{
+				case '2':
+					if (strlen(tarhead->linkedname) >= 4 * (EXT2_TIND_BLOCK+1))
+						stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->ninodes++;
+					break;
+				case '0':
+				case 0:
+				case '7':
+					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+				case '1':
+				case '6':
+				case '3':
+				case '4':
+					stats->ninodes++;
+					break;
+				default:
+					break;
+			}
+			fseek(fh, filesize + padding, SEEK_CUR);
+		} else {
+			if (fs && strcmp(path, "/") == 0) {
+				// if the entry modifies the root node, don't call
+				// basename and dirname but chmod the root node
+				// directly
+				fseek(fh, filesize + padding, SEEK_CUR);
+				if (type != '5') {
+					error_msg("tarball entry \"%s\" skipped: root node must be a directory", path);
+					continue;
+				}
+				mode |= FM_IFDIR;
+				chmod_fs(fs, this_nod, mode, uid, gid);
+				continue;
+			}
+			path2 = strdup(path);
+			name = basename(path);
+			dir = dirname(path2);
+			if((!strcmp(name, ".")) || (!strcmp(name, "..")))
+			{
+				error_msg("tarball entry %s skipped", path);
+				fseek(fh, filesize + padding, SEEK_CUR);
+				continue;
+			}
+			if(fs)
+			{
+				if(!(nod = find_path(fs, this_nod, dir)))
+				{
+					error_msg("tarball entry %s skipped: can't find directory '%s' to create '%s''", path, dir, name);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					continue;
+				}
+			}
+			else
+				nod = 0;
+			switch (type)
+			{
+				case '5':
+					if((oldnod = find_path(fs, nod, dir)))
+						chmod_fs(fs, nod = oldnod, mode, uid, gid);
+					else
+						nod = mkdir_fs(fs, nod, name, mode, uid, gid, ctime, mtime);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				case '0':
+				case 0:
+				case '7':
+					nod = mkfile_fs(fs, nod, name, mode, fh, filesize, uid, gid, ctime, mtime);
+					fseek(fh, padding, SEEK_CUR);
+					break;
+				case '1':
+					if(!(hlnod = find_path(fs, this_nod, dir)))
+					{
+						error_msg("tarball entry %s skipped: can't find hardlink destination '%s' to create '%s''", path, dir, name);
+						fseek(fh, filesize + padding, SEEK_CUR);
+						continue;
+					}
+					add2dir(fs, nod, hlnod, name);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				case '2':
+					mklink_fs(fs, nod, name, strlen(tarhead->linkedname), (uint8*)tarhead->linkedname, uid, gid, ctime, mtime);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				case '6':
+					nod = mknod_fs(fs, nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				case '3':
+					nod = mknod_fs(fs, nod, name, mode|FM_IFCHR, uid, gid, major, minor, ctime, mtime);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				case '4':
+					nod = mknod_fs(fs, nod, name, mode|FM_IFBLK, uid, gid, major, minor, ctime, mtime);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					break;
+				default:
+					error_msg("tarball entry %s skipped: bad type '%c' for entry '%s'", path, type, name);
+					fseek(fh, filesize + padding, SEEK_CUR);
+					continue;
+			}
+		}
+	}
+	if (path2)
+		free(path2);
+	if (nbnull != 2)
+		error_msg_and_die("tarball has wrong size");
 }
 
 // add or fixup entries to the filesystem from a text file
@@ -2210,7 +2423,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			// basename and dirname but chmod the root node
 			// directly
 			if (type != 'd') {
-				error_msg("device table line %d skipped: root node must be directory", lineno);
+				error_msg("device table line %d skipped: root node must be a directory", lineno);
 				continue;
 			}
 			mode |= FM_IFDIR;
@@ -2318,6 +2531,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	struct stat st;
 	char *lnk;
 	uint32 save_nod;
+	off_t filesize;
 
 	if(!(dh = opendir(".")))
 		perror_msg_and_die(".");
@@ -2417,11 +2631,14 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					break;
 				case S_IFREG:
 					fh = fopen(dent->d_name, "rb");
+					fseek(fh, 0, SEEK_END);
+					filesize = ftell(fh);
+					rewind(fh);
 					if (!fh) {
 						error_msg("Unable to open file %s", dent->d_name);
 						break;
 					}
-					nod = mkfile_fs(fs, this_nod, name, mode, fh, uid, gid, ctime, mtime);
+					nod = mkfile_fs(fs, this_nod, name, mode, fh, filesize, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:
@@ -3157,6 +3374,15 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 				if(close(pdir) < 0)
 					perror_msg_and_die("close");
 				break;
+			case FSLAYER_TAR:
+				if((st.st_mode & S_IFMT) != S_IFREG)
+					error_msg_and_die("%s should be a file", fslayers[i].path);
+				if(fs)
+					fprintf(stderr, "copying from tar archive %s\n", fslayers[i].path);
+				fh = xfopen(fslayers[i].path, "rb");
+				add2fs_from_tarball(fs, nod, fh, squash_uids, squash_perms, fs_timestamp, stats);
+				fclose(fh);
+				break;
 		}
 	}
 }
@@ -3175,6 +3401,7 @@ showhelp(void)
 	"  -x, --starting-image <image>\n"
 	"  -d, --root <directory>     Copy from a local directory\n"
 	"  -D, --devtable <file>      Add or fixup nodes from a device table\n"
+	"  -a, --tarball <file>       Copy from a tar archive\n"
 	"  -B, --block-size <bytes>\n"
 	"  -b, --size-in-blocks <blocks>\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
@@ -3255,6 +3482,7 @@ main(int argc, char **argv)
 	  { "starting-image",	required_argument,	NULL, 'x' },
 	  { "root",		required_argument,	NULL, 'd' },
 	  { "devtable",		required_argument,	NULL, 'D' },
+	  { "tarball",		required_argument,	NULL, 'a' },
 	  { "block-size",	required_argument,	NULL, 'B' },
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
@@ -3277,11 +3505,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:B:b:i:N:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:B:b:i:N:L:m:o:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -3294,6 +3522,10 @@ main(int argc, char **argv)
 				break;
 			case 'D':
 				layers[nlayers].type = FSLAYER_TABLE;
+				layers[nlayers++].path = optarg;
+				break;
+			case 'a':
+				layers[nlayers].type = FSLAYER_TAR;
 				layers[nlayers++].path = optarg;
 				break;
 			case 'B':
