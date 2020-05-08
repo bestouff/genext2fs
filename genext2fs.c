@@ -2668,8 +2668,6 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 
 // Copy size blocks from src to dst, putting holes in the output
 // file (if possible) if the input block is all zeros.
-// Copy size blocks from src to dst, putting holes in the output
-// file (if possible) if the input block is all zeros.
 static void
 copy_file(filesystem *fs, FILE *dst, FILE *src, size_t size)
 {
