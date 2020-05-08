@@ -2226,14 +2226,11 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			continue;
 		} else
 			nbnull = 0;
+		if (*(long *)tarhead->ustar != *(long *)"ustar\00000" && *(long *)tarhead->ustar != *(long *)"ustar  ")
+			error_msg_and_die("tarball corrupted");
 		snprintf(path, sizeof path, "%s%s", tarhead->prefix, tarhead->filename);
-		printf("filename: %s\n", path);
 		filesize = OCTAL_READ(tarhead->filesize);
 		padding = rndup(filesize, TAR_BLOCKSIZE) - filesize;
-		printf("filesize: %s = %ld\n", tarhead->filesize, filesize);
-		printf("padding: %ld\n", padding);
-		printf("mode: %o\n", (int)OCTAL_READ(tarhead->filemode));
-		printf("uid: %ld\n", OCTAL_READ(tarhead->uid));
 		mtime = OCTAL_READ(tarhead->mtime);
 		ctime = fs_timestamp;
 		uid = OCTAL_READ(tarhead->uid);
@@ -2242,13 +2239,11 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		major = OCTAL_READ(tarhead->major);
 		minor = OCTAL_READ(tarhead->minor);
 		type = tarhead->filetype;
-		printf("mtime: %d\n", mtime);
 		if (squash_uids)
 			uid = gid = 0;
 		if (squash_perms)
 			mode &= ~(FM_IRWXG | FM_IRWXO);
 		// TODO checksum
-		// TODO ustar
 		if (stats)
 		{
 			switch (type)
