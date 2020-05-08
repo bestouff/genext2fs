@@ -3137,7 +3137,7 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 				if((st.st_mode & S_IFMT) != S_IFREG)
 					error_msg_and_die("%s should be a file", fslayers[i].path);
 				if(fs)
-					printf("nodes fixup and creation from device table %s\n", fslayers[i].path);
+					fprintf(stderr, "nodes fixup and creation from device table %s\n", fslayers[i].path);
 				fh = xfopen(fslayers[i].path, "rb");
 				add2fs_from_file(fs, nod, fh, fs_timestamp, stats);
 				fclose(fh);
@@ -3146,7 +3146,7 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 				if((st.st_mode & S_IFMT) != S_IFDIR)
 					error_msg_and_die("%s should be a directory", fslayers[i].path);
 				if(fs)
-					printf("copying from directory %s\n", fslayers[i].path);
+					fprintf(stderr, "copying from directory %s\n", fslayers[i].path);
 				if((pdir = open(".", O_RDONLY)) < 0)
 					perror_msg_and_die(".");
 				if(chdir(fslayers[i].path) < 0)
@@ -3367,7 +3367,7 @@ main(int argc, char **argv)
 
 	if(fsin)
 	{
-		printf("starting from existing image %s", fsin);
+		fprintf(stderr, "starting from existing image %s", fsin);
 		if(strcmp(fsin, "-"))
 		{
 			FILE * fh = xfopen(fsin, "rb");
