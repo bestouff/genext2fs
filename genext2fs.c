@@ -1832,6 +1832,7 @@ inode_pos_init(filesystem *fs, inode_pos *ipos, uint32 nod, int op,
 static void
 inode_pos_finish(filesystem *fs, inode_pos *ipos)
 {
+	fs = fs; // unused
 	put_nod(ipos->ni);
 }
 
