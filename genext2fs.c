@@ -2168,21 +2168,29 @@ get_mode(struct stat *st)
 	return mode;
 }
 
-#define OCTAL_READ(field) octal_read(field, sizeof field)
+#define OCTAL_READ(field) tar_numeric_field_read((unsigned char*)field, sizeof field)
 
-size_t octal_read(char *field, size_t size)
+long long tar_numeric_field_read(unsigned char *field, size_t size)
 {
-	// TODO handle 256-based encoding if high-bit set
-	size_t i, res = 0;
-	for(i = 0; i < size; i++)
+	size_t i;
+	long long res = 0;
+	// this is the 256-based GNU extension
+	if(*field == 0x80 || *field == 0xff)
 	{
-		char c = field[i];
-		if(c == ' ')
-			continue;
-		if(c < '0' || c > '7')
-			break;
-		res = 8 * res + c - '0';
-	}
+		if(*field == 0xff)
+			res = -1;
+		for(i = 1; i < size; i++)
+			res = (res << 8) + field[i];
+	} else
+		for(i = 0; i < size; i++)
+		{
+			char c = field[i];
+			if(c == ' ')
+				continue;
+			if(c < '0' || c > '7')
+				break;
+			res = 8 * res + c - '0';
+		}
 	return res;
 }
 
@@ -2226,7 +2234,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			continue;
 		} else
 			nbnull = 0;
-		if (*(long *)tarhead->ustar != *(long *)"ustar\00000" && *(long *)tarhead->ustar != *(long *)"ustar  ")
+		if (*(long *)tarhead->ustar != *(long *)"ustar\00000")
 			error_msg_and_die("tarball corrupted");
 		snprintf(path, sizeof path, "%s%s", tarhead->prefix, tarhead->filename);
 		filesize = OCTAL_READ(tarhead->filesize);
