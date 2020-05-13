@@ -2214,6 +2214,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 	struct tar_header *tarhead = (void*)buffer;
 	size_t filesize, padding;
 	int nbnull = 0;
+	int i, checksum, signed_checksum, unsigned_checksum;
 
 	size_t readbytes;
 	while(1)
@@ -2235,6 +2236,16 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		} else
 			nbnull = 0;
 		if (*(long *)tarhead->ustar != *(long *)"ustar\00000")
+			error_msg_and_die("not a tarball");
+		signed_checksum = unsigned_checksum = 0;
+		checksum = OCTAL_READ(tarhead->checksum);
+		memset(tarhead->checksum, ' ', sizeof tarhead->checksum);
+		for(i = 0; i < TAR_BLOCKSIZE; i++)
+		{
+			signed_checksum += (signed char)buffer[i];
+			unsigned_checksum += (unsigned char)buffer[i];
+		}
+		if(checksum != signed_checksum && checksum != unsigned_checksum)
 			error_msg_and_die("tarball corrupted");
 		snprintf(path, sizeof path, "%s%s", tarhead->prefix, tarhead->filename);
 		filesize = OCTAL_READ(tarhead->filesize);
