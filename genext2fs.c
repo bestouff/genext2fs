@@ -2235,7 +2235,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			continue;
 		} else
 			nbnull = 0;
-		if (*(long *)tarhead->ustar != *(long *)"ustar\00000")
+		if (*(long *)tarhead->ustar != *(long *)"ustar\00000" && strcmp(tarhead->ustar, "ustar  "))
 			error_msg_and_die("not a tarball");
 		signed_checksum = unsigned_checksum = 0;
 		checksum = OCTAL_READ(tarhead->checksum);
