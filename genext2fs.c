@@ -2209,12 +2209,18 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 	uint32 nod, hlnod, oldnod;
 	uint32 uid, gid, mode, major, minor, ctime, mtime;
 	char buffer[TAR_BLOCKSIZE];
-	char path[TAR_FULLFILENAME], *path2 = NULL, *dir, *name;
+	char pathbuf[TAR_FULLFILENAME], *path, *path2 = NULL, *dir, *name;
 	char type;
 	struct tar_header *tarhead = (void*)buffer;
 	size_t filesize, padding;
 	int nbnull = 0;
 	int i, checksum, signed_checksum, unsigned_checksum;
+	int has_longname = 0;
+	char *longname = NULL;
+	size_t longname_size = 0;
+	int has_longlink = 0;
+	char *longlink = NULL;
+	size_t longlink_size = 0;
 
 	size_t readbytes;
 	while(1)
@@ -2247,7 +2253,6 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		}
 		if(checksum != signed_checksum && checksum != unsigned_checksum)
 			error_msg_and_die("tarball corrupted");
-		snprintf(path, sizeof path, "%s%s", tarhead->prefix, tarhead->filename);
 		filesize = OCTAL_READ(tarhead->filesize);
 		padding = rndup(filesize, TAR_BLOCKSIZE) - filesize;
 		mtime = OCTAL_READ(tarhead->mtime);
@@ -2262,7 +2267,14 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			uid = gid = 0;
 		if (squash_perms)
 			mode &= ~(FM_IRWXG | FM_IRWXO);
-		// TODO checksum
+		if(has_longname)
+		{
+			path = longname;
+			has_longname = 0;
+		} else {
+			snprintf(pathbuf, sizeof pathbuf, "%s%s", tarhead->prefix, tarhead->filename);
+			path = pathbuf;
+		}
 		if (stats)
 		{
 			switch (type)
@@ -2346,7 +2358,11 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					fseek(fh, filesize + padding, SEEK_CUR);
 					break;
 				case '2':
-					mklink_fs(fs, nod, name, strlen(tarhead->linkedname), (uint8*)tarhead->linkedname, uid, gid, ctime, mtime);
+					if(has_longlink)
+						mklink_fs(fs, nod, name, strlen(longlink), (uint8*)longlink, uid, gid, ctime, mtime);
+					else
+						mklink_fs(fs, nod, name, strlen(tarhead->linkedname), (uint8*)tarhead->linkedname, uid, gid, ctime, mtime);
+					has_longlink = 0;
 					fseek(fh, filesize + padding, SEEK_CUR);
 					break;
 				case '6':
@@ -2361,6 +2377,30 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					nod = mknod_fs(fs, nod, name, mode|FM_IFBLK, uid, gid, major, minor, ctime, mtime);
 					fseek(fh, filesize + padding, SEEK_CUR);
 					break;
+				case 'L':
+					if(has_longname)
+						error_msg("tarball longname to '%s' hasn't been consumed", longname);
+					if(filesize + padding > longname_size)
+					{
+						if(longname)
+							free(longname);
+						longname = malloc(longname_size = filesize + padding);
+					}
+					fread(longname, longname_size, 1, fh);
+					has_longname = 1;
+					break;
+				case 'K':
+					if(has_longlink)
+						error_msg("tarball longlink to '%s' hasn't been consumed", longlink);
+					if(filesize + padding > longlink_size)
+					{
+						if(longlink)
+							free(longlink);
+						longlink = malloc(longlink_size = filesize + padding);
+					}
+					fread(longlink, longlink_size, 1, fh);
+					has_longlink = 1;
+					break;
 				default:
 					error_msg("tarball entry %s skipped: bad type '%c' for entry '%s'", path, type, name);
 					fseek(fh, filesize + padding, SEEK_CUR);
@@ -2372,6 +2412,10 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		free(path2);
 	if (nbnull != 2)
 		error_msg_and_die("tarball has wrong size");
+	if(longname)
+		free(longname);
+	if(longlink)
+		free(longlink);
 }
 
 // add or fixup entries to the filesystem from a text file
