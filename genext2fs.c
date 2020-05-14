@@ -2173,7 +2173,7 @@ get_mode(struct stat *st)
 long long tar_numeric_field_read(unsigned char *field, size_t size)
 {
 	size_t i;
-	long long res = 0;
+	unsigned long long res = 0;
 	// this is the 256-based GNU extension
 	if(*field == 0x80 || *field == 0xff)
 	{
