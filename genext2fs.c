@@ -2323,7 +2323,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			switch (type)
 			{
 				case '5':
-					if((oldnod = find_path(fs, nod, dir)))
+					if((oldnod = find_path(fs, nod, name)))
 						chmod_fs(fs, nod = oldnod, mode, uid, gid);
 					else
 						nod = mkdir_fs(fs, nod, name, mode, uid, gid, ctime, mtime);
