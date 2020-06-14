@@ -48,6 +48,15 @@ specified files). Furthermore, you can use a single table entry to
 create many devices with a range of minor numbers (see examples below).
 All specified inodes receive the mtime of **spec-file** itself.
 
+**-a, --tarball file[:path]**
+
+Add the given archive (tarball) contents at a particular path (by default
+the root).
+Note: if not compiled with `libarchive`, genext2fs will use a builtin
+tarball parser with very primitive capabilities (e.g. no sparse file
+support, generally no support other than for modern GNU tar without
+fancy options).
+
 **-b, --size-in-blocks blocks**
 
 Size of the image in blocks.
