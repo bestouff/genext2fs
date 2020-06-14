@@ -48,6 +48,14 @@ ltest () {
 	gen_cleanup
 }
 
+atest() {
+	expected_digest=$1
+	shift
+	agen $@
+	md5cmp $expected_digest
+	gen_cleanup
+}
+
 # NB: always use test-mount.sh to regenerate these digests, that is,
 # replace the following lines with the output of
 # sudo sh test-mount.sh|grep test
@@ -72,3 +80,4 @@ ftest 3db16dd57bd15c1c80dd6bc900411c58 4096 default device_table.txt
 ltest c21b5a3cad405197e821ba7143b0ea9b 200 1024 123456789 device_table_link.txt
 ltest 18b04b4bea2f7ebf315a116be5b92589 200 1024 1234567890 device_table_link.txt
 ltest 8aaed693b75dbdf77607f376d661027a 200 4096 12345678901 device_table_link.txt
+atest 402860495b7e2e1f714e017ef37466c6 200 1024 H4sIAAAAAAACA+3VQQ6CMBCF4a49RU8AnZaZOY8sSIgNTRASj29FVyzUTQno+zYlwAL4M7SqTXEuU+ZlzdbrckxBlJga5SafV/ViLJsNzNfpPFprxpSmd/d9un5QVT3MMZbvL03zfX/yTpyx4Uj9n+9BrzUcp3/Xd2k//UVC7u9Y1FjB/G/QP/bDpZpuU9n+qvpVf9a8T1Bg8sb6LqW6PY9Fn+7v+z8+8n72f2ZZ5p8I+/92/csO2ef/P6/6e/fo79C/uDbO7ckAAAAAAAAAAAAAAAAAwC+4A2+TDLQAKAAA

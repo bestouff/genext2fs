@@ -76,3 +76,13 @@ lgen () {
 	cd ..
 	./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -D $origin_dir/$devtable -f -o Linux -q $test_img
 }
+
+# agen - Exercises the -a option of genext2fs.
+# Creates an image with a file of given size.
+agen () {
+	blocks=$1; blocksz=$2; tarball=$3
+	echo Testing $blocks blocks of $blocksz bytes with tarball
+	gen_setup
+	echo $tarball | base64 -d | gzip -dc > "$test_dir/input.tar"
+	./genext2fs -B $blocksz -N 17 -b $blocks -a "$test_dir/input.tar" -f -o Linux $test_img
+}
