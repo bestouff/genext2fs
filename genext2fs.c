@@ -3583,17 +3583,25 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 			if(fs && !(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
 				error_msg_and_die("path %s not found in filesystem", pdest);
 		}
+		/* do not compute stats when input is to be read from stdin */
+		if (stats != NULL && strcmp(fslayers[i].path, "-") == 0) {
+			continue;
+		}
 		stat(fslayers[i].path, &st);
 		switch(fslayers[i].type)
 		{
 			case FSLAYER_TABLE:
-				if((st.st_mode & S_IFMT) != S_IFREG)
+				if(strcmp(fslayers[i].path, "-") == 0)
+					fh = stdin;
+				else if((st.st_mode & S_IFMT) != S_IFREG)
 					error_msg_and_die("%s should be a file", fslayers[i].path);
+				else
+					fh = xfopen(fslayers[i].path, "rb");
 				if(fs)
 					fprintf(stderr, "nodes fixup and creation from device table %s\n", fslayers[i].path);
-				fh = xfopen(fslayers[i].path, "rb");
 				add2fs_from_file(fs, nod, fh, fs_timestamp, stats);
-				fclose(fh);
+				if(strcmp(fslayers[i].path, "-") != 0)
+					fclose(fh);
 				break;
 			case FSLAYER_DIR:
 				if((st.st_mode & S_IFMT) != S_IFDIR)
@@ -3611,13 +3619,17 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 					perror_msg_and_die("close");
 				break;
 			case FSLAYER_TAR:
-				if((st.st_mode & S_IFMT) != S_IFREG)
+				if(strcmp(fslayers[i].path, "-") == 0)
+					fh = stdin;
+				else if((st.st_mode & S_IFMT) != S_IFREG)
 					error_msg_and_die("%s should be a file", fslayers[i].path);
+				else
+					fh = xfopen(fslayers[i].path, "rb");
 				if(fs)
 					fprintf(stderr, "copying from tar archive %s\n", fslayers[i].path);
-				fh = xfopen(fslayers[i].path, "rb");
 				add2fs_from_tarball(fs, nod, fh, squash_uids, squash_perms, fs_timestamp, stats);
-				fclose(fh);
+				if(strcmp(fslayers[i].path, "-") != 0)
+					fclose(fh);
 				break;
 		}
 	}
@@ -3832,6 +3844,15 @@ main(int argc, char **argv)
 		error_msg_and_die("Valid block sizes: 1024, 2048 or 4096.");
 	if(creator_os < 0)
 		error_msg_and_die("Creator OS unknown.");
+
+	int numstdin = 0;
+	for(i = 0; i < nlayers; i++)
+		if (strcmp(layers[i].path, "-") == 0)
+			numstdin++;
+	if (numstdin == 1 && nbinodes == -1 && bytes_per_inode == -1)
+		fprintf(stderr, "Cannot count the required inodes for input from stdin -- use the -N or -i options to set the number of inodes or work with temporary files.");
+	if (numstdin > 1)
+		error_msg_and_die("only one input can come from stdin");
 
 	if(fsin)
 	{

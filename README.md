@@ -16,7 +16,9 @@ It does not require you to mount the image file to copy files on it, nor
 does it require that you become the superuser to make device nodes.
 
 The filesystem image is created in the file *output-image*. If not
-specified, it is sent to stdout.
+specified, it is sent to stdout. The `-d` and `-a` options support reading
+from stdin if a single hyphen is given as an argument. Thus, genext2fs
+can be used as part of a pipeline without any temporary files.
 
 By default, the maximum number of inodes in the filesystem is the
 minimum number required to accommodate the initial contents. In this
@@ -51,7 +53,8 @@ All specified inodes receive the mtime of **spec-file** itself.
 **-a, --tarball file[:path]**
 
 Add the given archive (tarball) contents at a particular path (by default
-the root).
+the root). If **file** is a hyphen, then the tarball will be read from
+standard input.
 Note: if not compiled with `libarchive`, genext2fs will use a builtin
 tarball parser with very primitive capabilities (e.g. no sparse file
 support, generally no support other than for modern GNU tar without
@@ -67,7 +70,13 @@ Size of a filesystem block in bytes.
 
 **-N, --number-of-inodes inodes**
 
-Maximum number of inodes.
+Minimum number of inodes. The required inode number will be computed
+automatically for all input that is not read from stdin. The number given
+by this option sets the minimum number of inodes. If you add anything
+from standard input, you should set this value because in that case the
+required number of inodes cannot be precomputed. The value set by this
+option will be overwritten by the value computed from the `-i` option,
+if the resulting number of inodes is larger.
 
 **-L, --volume-label name**
 
@@ -75,8 +84,12 @@ Set the volume label for the filesystem.
 
 **-i, --bytes-per-inode ratio**
 
-Used to calculate the maximum number of inodes from the available
-blocks.
+Used to calculate the minimum number of inodes from the available blocks.
+Inodes are computed by multiplying the number of blocks (`-b`) by the blocksize
+(1024) and dividing that by the **ratio** given in this option. If the result
+is larger, then the number of required inodes counted from the input or the
+minimum number of inodes from the `-N` option, then the value computed by
+this option is used.
 
 **-m, --reserved-percentage N**
 

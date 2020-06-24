@@ -51,12 +51,16 @@ dgen () {
 # fgen - Exercises the -D option of genext2fs.
 # Creates an image with the devices listed in the given spec file.
 fgen () {
-	blocks=$1; fname=$3
+	stdin=$1; blocks=$2; fname=$4
 	echo Testing $blocks blocks with with devices file $fname
 	gen_setup
 	cp $origin_dir/$fname $test_dir
 	TZ=UTC-11 touch -t 200502070321.43 $test_dir/$fname
-	./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
+	if [ "$stdin" = "y" ]; then
+		./genext2fs -N 92 -b $blocks -D - -f -o Linux $test_img < $test_dir/$fname
+	else
+		./genext2fs -N 92 -b $blocks -D $test_dir/$fname -f -o Linux $test_img
+	fi
 }
 
 # lgen - Exercises the -d option of genext2fs, with symlink
@@ -66,7 +70,7 @@ fgen () {
 # NB: some systems including early versions of Mac OS X cannot
 # change symlink timestamps; this test will fail on those systems.
 lgen () {
-	blocks=$1; blocksz=$2; appendage=$3; devtable=$4
+	stdin=$1; blocks=$2; blocksz=$3; appendage=$4; devtable=$5
 	echo Testing $blocks blocks of $blocksz bytes with symlink ...$appendage and devices file $devtable
 	gen_setup
 	cd $test_dir
@@ -74,15 +78,23 @@ lgen () {
 	ln -s $target symlink
 	TZ=UTC-11 touch -h -t 201309241353.59 symlink .
 	cd ..
-	./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -D $origin_dir/$devtable -f -o Linux -q $test_img
+	if [ "$stdin" = "y" ]; then
+		./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -D - -f -o Linux -q $test_img < $origin_dir/$devtable
+	else
+		./genext2fs -B $blocksz -N 234 -b $blocks -d $test_dir -D $origin_dir/$devtable -f -o Linux -q $test_img
+	fi
 }
 
 # agen - Exercises the -a option of genext2fs.
 # Creates an image with a file of given size.
 agen () {
-	blocks=$1; blocksz=$2; tarball=$3
+	stdin=$1; blocks=$2; blocksz=$3; tarball=$4
 	echo Testing $blocks blocks of $blocksz bytes with tarball
 	gen_setup
 	echo $tarball | base64 -d | gzip -dc > "$test_dir/input.tar"
-	./genext2fs -B $blocksz -N 17 -b $blocks -a "$test_dir/input.tar" -f -o Linux $test_img
+	if [ "$stdin" = "y" ]; then
+		./genext2fs -B $blocksz -N 17 -b $blocks -a - -f -o Linux $test_img < "$test_dir/input.tar"
+	else
+		./genext2fs -B $blocksz -N 17 -b $blocks -a "$test_dir/input.tar" -f -o Linux $test_img
+	fi
 }
