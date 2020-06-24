@@ -35,7 +35,9 @@ dtest () {
 ftest () {
 	expected_digest=$1
 	shift
-	fgen $@
+	fgen y $@
+	md5cmp $expected_digest
+	fgen n $@
 	md5cmp $expected_digest
 	gen_cleanup
 }
@@ -43,7 +45,9 @@ ftest () {
 ltest () {
 	expected_digest=$1
 	shift
-	lgen $@
+	lgen y $@
+	md5cmp $expected_digest
+	lgen n $@
 	md5cmp $expected_digest
 	gen_cleanup
 }
@@ -51,7 +55,9 @@ ltest () {
 atest() {
 	expected_digest=$1
 	shift
-	agen $@
+	agen y $@
+	md5cmp $expected_digest
+	agen n $@
 	md5cmp $expected_digest
 	gen_cleanup
 }
