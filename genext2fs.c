@@ -2,7 +2,7 @@
 // genext2fs.c
 //
 // ext2 filesystem generator for embedded systems
-// Copyright (C) 2000 Xavier Bestel <xavier.bestel@free.fr>
+// Copyright (C) 2000 Xavier Bestel <xav@bes.tel>
 //
 // Please direct support requests to https://github.com/bestouff/genext2fs/issues
 //
