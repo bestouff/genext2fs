@@ -148,6 +148,11 @@
 # include <limits.h>
 #endif
 
+#ifdef HAVE_LIBARCHIVE
+#include <archive.h>
+#include <archive_entry.h>
+#endif
+
 #include "cache.h"
 
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -2096,42 +2101,85 @@ fs_upgrade_rev1_largefile(filesystem *fs)
 #define COPY_BLOCKS 16
 #define CB_SIZE (COPY_BLOCKS * BLOCKSIZE)
 
-// make a file from a FILE*
-static uint32
-mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, FILE *f, off_t size, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+typedef off_t (*file_read_cb)(filesystem *fs, inode_pos *ipos, off_t size, void *data);
+
+off_t fh_read(filesystem *fs, inode_pos *ipos, off_t size, void *data)
 {
-	uint8 * b;
-	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
-	nod_info *ni;
-	inode *node = get_nod(fs, nod, &ni);
-	off_t remaining_size = size;
 	size_t readbytes;
-	inode_pos ipos;
+	off_t remaining_size = size;
 	int fullsize;
 
-	b = malloc(CB_SIZE);
+	uint8 * b = malloc(CB_SIZE);
 	if (!b)
 		error_msg_and_die("mkfile_fs: out of memory");
-	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
-	readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), f);
+
+	readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), (FILE *)data);
 	while (readbytes) {
 		remaining_size -= readbytes;
 		fullsize = rndup(readbytes, BLOCKSIZE);
 		// Fill to end of block with zeros.
 		memset(b + readbytes, 0, fullsize - readbytes);
-		extend_inode_blk(fs, &ipos, b, fullsize / BLOCKSIZE);
-		readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), f);
+		extend_inode_blk(fs, ipos, b, fullsize / BLOCKSIZE);
+		readbytes = fread(b, 1, MIN(remaining_size, CB_SIZE), (FILE *)data);
 	}
-	if (size > 0x7fffffff) {
+
+	free(b);
+
+	return size;
+}
+
+#ifdef HAVE_LIBARCHIVE
+off_t la_read(filesystem *fs, inode_pos *ipos, off_t s /* ignored */, void *data)
+{
+	size_t readbytes;
+	off_t actual_size = 0;
+	int fullsize;
+
+	uint8 * b = malloc(CB_SIZE);
+	if (!b)
+		error_msg_and_die("mkfile_fs: out of memory");
+
+	readbytes = archive_read_data((struct archive *)data, b, CB_SIZE);
+	while (readbytes) {
+		actual_size += readbytes;
+		fullsize = rndup(readbytes, BLOCKSIZE);
+		// Fill to end of block with zeros.
+		memset(b + readbytes, 0, fullsize - readbytes);
+		extend_inode_blk(fs, ipos, b, fullsize / BLOCKSIZE);
+		readbytes = archive_read_data((struct archive *)data, b, CB_SIZE);
+	}
+
+	free(b);
+
+	return actual_size;
+
+
+}
+#endif
+
+// make a file from a FILE*
+static uint32
+mkfile_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode, file_read_cb read_cb, void *data, off_t size, uid_t uid, gid_t gid, uint32 ctime, uint32 mtime)
+{
+	uint32 nod = mknod_fs(fs, parent_nod, name, mode|FM_IFREG, uid, gid, 0, 0, ctime, mtime);
+	nod_info *ni;
+	inode *node = get_nod(fs, nod, &ni);
+	off_t actual_size;
+	inode_pos ipos;
+
+	inode_pos_init(fs, &ipos, nod, INODE_POS_TRUNCATE, NULL);
+
+	actual_size = read_cb(fs, &ipos, size, data);
+
+	if (actual_size > 0x7fffffff) {
 		if (fs->sb->s_rev_level < 1)
 			fs_upgrade_rev1_largefile(fs);
 		fs->sb->s_feature_ro_compat |= EXT2_FEATURE_RO_COMPAT_LARGE_FILE;
 	}
-	node->i_dir_acl = size >> 32;
-	node->i_size = size;
+	node->i_dir_acl = actual_size >> 32;
+	node->i_size = actual_size;
 	inode_pos_finish(fs, &ipos);
 	put_nod(ni);
-	free(b);
 	return nod;
 }
 
@@ -2206,6 +2254,7 @@ int is_zero(char *block, size_t size)
 static void
 add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
+#ifndef HAVE_LIBARCHIVE
 	uint32 nod, hlnod, oldnod;
 	uint32 uid, gid, mode, major, minor, ctime, mtime;
 	char buffer[TAR_BLOCKSIZE];
@@ -2344,7 +2393,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 				case '0':
 				case 0:
 				case '7':
-					nod = mkfile_fs(fs, nod, name, mode, fh, filesize, uid, gid, ctime, mtime);
+					nod = mkfile_fs(fs, nod, name, mode, fh_read, fh, filesize, uid, gid, ctime, mtime);
 					fseek(fh, padding, SEEK_CUR);
 					break;
 				case '1':
@@ -2416,6 +2465,136 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		free(longname);
 	if(longlink)
 		free(longlink);
+#else
+	int r;
+	uint32 nod, lnknod;
+	struct archive *a;
+	struct archive_entry *entry;
+	char *path2, *path3, *dir, *name, *lnk;
+	size_t filesize;
+	uint32 uid, gid, mode, ctime, mtime;
+	a = archive_read_new();
+	if (a == NULL)
+		error_msg_and_die("Couldn't create archive reader.");
+	if (archive_read_support_filter_all(a) != ARCHIVE_OK)
+		error_msg_and_die("Couldn't enable decompression");
+	if (archive_read_support_format_all(a) != ARCHIVE_OK)
+		error_msg_and_die("Couldn't enable read formats");
+
+	if ((r = archive_read_open_FILE(a, fh)))
+		error_msg_and_die("archive_read_open_FILE(): %s", archive_error_string(a));
+
+	for (;;) {
+		r = archive_read_next_header(a, &entry);
+		if (r == ARCHIVE_EOF)
+			break;
+		if (r != ARCHIVE_OK)
+			error_msg_and_die("archive_read_next_header(): %s",
+			    archive_error_string(a));
+		mode = archive_entry_mode(entry);
+		if (stats)
+		{
+			// depending on the archive, the entry size might not
+			// be set in the first place in which case the
+			// estimate might be totally off
+			filesize = archive_entry_size(entry);
+			switch(mode & S_IFMT)
+			{
+				case S_IFLNK:
+					if(filesize >= 4 * (EXT2_TIND_BLOCK+1))
+						stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->ninodes++;
+					break;
+				case S_IFREG:
+					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+				case S_IFCHR:
+				case S_IFBLK:
+				case S_IFIFO:
+				case S_IFSOCK:
+					stats->ninodes++;
+					break;
+				case S_IFDIR:
+					stats->ninodes++;
+					break;
+				default:
+					break;
+			}
+			continue;
+		}
+		path2 = strdup(archive_entry_pathname(entry));
+		path3 = strdup(archive_entry_pathname(entry));
+		name = basename(path2);
+		dir = dirname(path3);
+		if(!(nod = find_path(fs, this_nod, dir)))
+		{
+			error_msg("can't find directory '%s' to create '%s''", dir, name);
+			continue;
+		}
+		uid = archive_entry_uid(entry);
+		gid = archive_entry_gid(entry);
+		if (squash_uids)
+			uid = gid = 0;
+		if (squash_perms)
+			mode &= ~(FM_IRWXG | FM_IRWXO);
+		if(find_dir(fs, nod, name))
+			chmod_fs(fs, nod, mode, uid, gid);
+			// FIXME: if the entry is a regular file, update
+			// content
+		else {
+			ctime = archive_entry_ctime(entry);
+			mtime = archive_entry_mtime(entry);
+			switch(mode & S_IFMT)
+			{
+#if HAVE_STRUCT_STAT_ST_RDEV
+				case S_IFCHR:
+					mknod_fs(fs, nod, name, mode|FM_IFCHR, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
+					break;
+				case S_IFBLK:
+					mknod_fs(fs, nod, name, mode|FM_IFBLK, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
+					break;
+#endif
+				case S_IFIFO:
+					mknod_fs(fs, nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
+					break;
+				case S_IFSOCK:
+					mknod_fs(fs, nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
+					break;
+				case S_IFLNK:
+					lnk = calloc(1, rndup(strlen(archive_entry_symlink(entry)), BLOCKSIZE));
+					strcpy(lnk, archive_entry_symlink(entry));
+					if (lnk == NULL)
+						error_msg_and_die(memory_exhausted);
+					mklink_fs(fs, nod, name, strlen(archive_entry_symlink(entry)), (uint8*)lnk, uid, gid, ctime, mtime);
+					free(lnk);
+					break;
+				case S_IFREG:
+					// we pass a filesize of zero because
+					// libarchive will take care of it for
+					// us and the archive does not
+					// necessarily contain the file size
+					// in the first place
+					mkfile_fs(fs, nod, name, mode, la_read, a, 0, uid, gid, ctime, mtime);
+					break;
+				case S_IFDIR:
+					mkdir_fs(fs, nod, name, mode, uid, gid, ctime, mtime);
+					break;
+				default:
+					// probably a hardlink
+					if (archive_entry_hardlink(entry) != NULL) {
+						if(!(lnknod = find_path(fs, this_nod, archive_entry_hardlink(entry))))
+							error_msg_and_die("path %s not found in filesystem", archive_entry_hardlink(entry));
+						add2dir(fs, nod, lnknod, name);
+					} else {
+						error_msg("ignoring entry %s with mode %d", archive_entry_pathname(entry), mode & S_IFMT);
+					}
+			}
+		}
+		free(path2);
+		free(path3);
+	}
+	archive_read_close(a);
+	archive_read_free(a);
+#endif
 }
 
 // add or fixup entries to the filesystem from a text file
@@ -2697,7 +2876,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 						error_msg("Unable to open file %s", dent->d_name);
 						break;
 					}
-					nod = mkfile_fs(fs, this_nod, name, mode, fh, filesize, uid, gid, ctime, mtime);
+					nod = mkfile_fs(fs, this_nod, name, mode, fh_read, fh, filesize, uid, gid, ctime, mtime);
 					fclose(fh);
 					break;
 				case S_IFDIR:

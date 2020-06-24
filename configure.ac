@@ -37,6 +37,27 @@ AC_CHECK_FUNCS([getopt_long getline strtof])
 AC_FUNC_SNPRINTF
 AC_FUNC_SCANF_CAN_MALLOC
 
+AC_MSG_CHECKING(--enable-libarchive argument)
+AC_ARG_ENABLE(libarchive,
+    [  --enable-libarchive        Include libarchive support.],
+    [enable_libarchive=$enableval],
+    [enable_libarchive="no"])
+AC_MSG_RESULT($enable_libarchive)
+if test "$enable_libarchive" = "yes"; then
+# Check for libarchive (no pkg-config support)
+AC_CHECK_LIB([archive], [archive_read_new], [ARCHIVE_LIBS=-larchive],
+    AC_MSG_ERROR([libarchive not found.
+                  If libarchive is installed then perhaps you should set
+                  the LDFLAGS=-L/nonstandard/lib/dir environment variable]))
+AC_SUBST([ARCHIVE_LIBS])
+AC_CHECK_HEADERS([archive.h archive_entry.h],,
+    AC_MSG_ERROR([libarchive headers not found.
+                  If the libarchive headers are installed then perhaps you
+                  should set the CPPFLAGS=-I/nonstandard/include/dir
+                  environment variable]))
+AC_DEFINE([HAVE_LIBARCHIVE], [], [Description])
+fi
+
 AC_OUTPUT([Makefile],[
 chmod a+x $ac_top_srcdir/test-mount.sh $ac_top_srcdir/test.sh
 ])
