@@ -167,7 +167,7 @@ struct fslayer {
 };
 
 #define TAR_BLOCKSIZE 512
-#define TAR_FULLFILENAME (100 + 155)
+#define TAR_FULLFILENAME (100 + 155 + 1)
 
 struct tar_header {
 	char filename[100];
@@ -2321,7 +2321,9 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			path = longname;
 			has_longname = 0;
 		} else {
-			snprintf(pathbuf, sizeof pathbuf, "%s%s", tarhead->prefix, tarhead->filename);
+			strncpy(pathbuf, tarhead->prefix, sizeof tarhead->prefix);
+			strncpy(pathbuf+strnlen(pathbuf, sizeof pathbuf), tarhead->filename, sizeof tarhead->filename);
+			pathbuf[strnlen(pathbuf, sizeof pathbuf - 1)] = '\0';
 			path = pathbuf;
 		}
 		if (stats)
