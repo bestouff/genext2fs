@@ -2397,7 +2397,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					fseek(fh, padding, SEEK_CUR);
 					break;
 				case '1':
-					if(!(hlnod = find_path(fs, this_nod, dir)))
+					if(!(hlnod = find_path(fs, this_nod, tarhead->linkedname)))
 					{
 						error_msg("tarball entry %s skipped: can't find hardlink destination '%s' to create '%s''", path, dir, name);
 						fseek(fh, filesize + padding, SEEK_CUR);
