@@ -3852,13 +3852,13 @@ main(int argc, char **argv)
 		if (strcmp(layers[i].path, "-") == 0)
 			numstdin++;
 	if (numstdin == 1 && nbinodes == -1 && bytes_per_inode == -1)
-		fprintf(stderr, "Cannot count the required inodes for input from stdin -- use the -N or -i options to set the number of inodes or work with temporary files.");
+		fprintf(stderr, "Cannot count the required inodes for input from stdin -- use the -N or -i options to set the number of inodes or work with temporary files.\n");
 	if (numstdin > 1)
 		error_msg_and_die("only one input can come from stdin");
 
 	if(fsin)
 	{
-		fprintf(stderr, "starting from existing image %s", fsin);
+		fprintf(stderr, "starting from existing image %s\n", fsin);
 		if(strcmp(fsin, "-"))
 		{
 			FILE * fh = xfopen(fsin, "rb");
