@@ -2922,7 +2922,7 @@ copy_file(filesystem *fs, FILE *dst, FILE *src, size_t size)
 		error_msg_and_die("copy_file: out of memory");
 	if (fseek(src, 0, SEEK_SET))
 		perror_msg_and_die("fseek");
-	if (ftruncate(fileno(dst), 0))
+	if ((dst != stdout) && ftruncate(fileno(dst), 0))
 		perror_msg_and_die("copy_file: ftruncate");
 	while (size > 0) {
 		if (fread(b, BLOCKSIZE, 1, src) != 1)
