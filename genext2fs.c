@@ -2058,11 +2058,14 @@ mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
 
 // byte swapping for symlinks
 static inline void
-swab32_into(uint32 *dst, uint32 *src, size_t n)
+swab32_into(uint32 *dst, uint8 *src, size_t n)
 {
 	size_t i;
-	for(i = 0; i < n; i++)
-		dst[i] = swab32(src[i]);
+	for(i = 0; i < n; i++) {
+		uint32 tmp_buf;
+		memcpy(&tmp_buf, src + i * sizeof(uint32) / sizeof(uint8), sizeof(uint32) / sizeof(uint8));
+		dst[i] = swab32(tmp_buf);
+	}
 }
 
 // make a symlink
@@ -2079,7 +2082,7 @@ mklink_fs(filesystem *fs, uint32 parent_nod, const char *name, size_t size, uint
 
 	if (size < 4 * (EXT2_TIND_BLOCK + 1))
 		if (fs->swapit)
-			swab32_into(node->i_block, (uint32 *)b, EXT2_TIND_BLOCK + 1);
+			swab32_into(node->i_block, b, EXT2_TIND_BLOCK + 1);
 		else
 			memcpy(node->i_block, b, 4 * (EXT2_TIND_BLOCK + 1));
 	else
@@ -2290,7 +2293,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			continue;
 		} else
 			nbnull = 0;
-		if (*(long *)tarhead->ustar != *(long *)"ustar\00000" && strcmp(tarhead->ustar, "ustar  "))
+		if (memcmp(tarhead->ustar, "ustar\00000", sizeof(long)) && strcmp(tarhead->ustar, "ustar  "))
 			error_msg_and_die("not a tarball");
 		signed_checksum = unsigned_checksum = 0;
 		checksum = OCTAL_READ(tarhead->checksum);
@@ -3351,7 +3354,7 @@ print_link(filesystem *fs, uint32 nod)
 			uint32 *buf = malloc(4 * (EXT2_TIND_BLOCK + 1));
 			if (buf == NULL)
 				error_msg_and_die(memory_exhausted);
-			swab32_into(buf, node->i_block, EXT2_TIND_BLOCK + 1);
+			swab32_into(buf, (uint8*)node->i_block, EXT2_TIND_BLOCK + 1);
 			printf("links to '%s'\n", (char*) buf);
 			free(buf);
 		} else {
