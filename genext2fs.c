@@ -2629,6 +2629,8 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 	size_t len;
 	struct stat st;
 	int nbargs, lineno = 0;
+	nod_info *ni;
+	inode *pnode;
 
 	fstat(fileno(fh), &st);
 	ctime = fs_timestamp;
@@ -2684,6 +2686,14 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 			{
 				error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
 				continue;
+			} else {
+				pnode = get_nod(fs, nod, &ni);
+				if((pnode->i_mode & FM_IFMT) != FM_IFDIR) {
+					error_msg("device table line %d skipped: parent '%s' is not a directory so won't create '%s''", lineno, dir, name);
+					put_nod(ni);
+					continue;
+				}
+				put_nod(ni);
 			}
 		}
 		else
