@@ -32,6 +32,23 @@ dtest () {
 	gen_cleanup
 }
 
+dtest_s () {
+	expected_digest=$1
+	shift
+	reversed=$1;
+	shift
+
+	gen_setup
+	ROOTDIR=$(mktemp -d)
+	TZ=UTC-11 touch -t 200502070321.43 $ROOTDIR/a $ROOTDIR/b $ROOTDIR/c $ROOTDIR
+
+	disorderfs --sort-dirents=yes --reverse-dirents="$reversed" "$ROOTDIR" "$test_dir"
+	dgen_raw $@
+	fusermount -u $test_dir
+	md5cmp $expected_digest
+	gen_cleanup
+}
+
 ftest () {
 	expected_digest=$1
 	shift
@@ -87,3 +104,5 @@ ltest c21b5a3cad405197e821ba7143b0ea9b 200 1024 123456789 device_table_link.txt
 ltest 18b04b4bea2f7ebf315a116be5b92589 200 1024 1234567890 device_table_link.txt
 ltest 8aaed693b75dbdf77607f376d661027a 200 4096 12345678901 device_table_link.txt
 atest 994ca42d3179c88263af777bedec0c55 200 1024 H4sIAAAAAAAAA+3WTW6DMBAF4Fn3FD6B8fj3PKAqahQSSwSk9vY1uKssGiJliFretzECJAYeY1s3JM4UKYRlLG7H5ZhdTIHZGevK+ZTYkgrypRFN17EdlKIh5/G3++5d/6N004qbA47er8/fWVduV2aLD7D7/A85C88Ba/ufA/sQIhk25VdA/2+h5t+1gx4/pd7vfv+Hm/ytmfNH/8vr+ql7e3UR8DK6uUx9L/uMtev/3P8p+KX/oyHlZMuqntX/9T34Z9yk9Gco8//xkGWf8Uj+Mbpl/Y+JVJQtq9r5/K+bj3Z474+Xk9wG4JH86/rvyzxAirfYnOw+/+vXWTb+uv9PaV3+JfiSv/WOlJVPf/f5AwAAAAAAAAAAAMD/9A0cPbO/ACgAAA==
+dtest_s c2745eb185e738821acfcc4c9c92e355 no 200 1024 0
+dtest_s c2745eb185e738821acfcc4c9c92e355 yes 200 1024 0
