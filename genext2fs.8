@@ -65,7 +65,20 @@ the root).
 Note: if not compiled with `libarchive`, genext2fs will use a builtin
 tarball parser with very primitive capabilities (e.g. no sparse file
 support, generally no support other than for modern GNU tar without
-fancy options).                                                                                                                                                                                                                      
+fancy options).
+.TP
+.BI "\-r, \-\-readjustment fmt"
+Increase or set the calculated number of blocks and inodes of the image.
+
+.I fmt
+: [+]?[0-9]+(%|k|ki|M|Mi|G|Gi):
+
+.RS
+.nf
++N% +Nk  +NM  +NG +Nki +NMi +NGi (increment the computed size)
+ N%  Nk   NM   NG  Nki  NMi  NGi (set size)
+.fi
+.RE
 .TP
 .BI "\-b, \-\-size\-in\-blocks blocks"
 Size of the image in blocks.
@@ -124,6 +137,15 @@ Display help.
 .BI SOURCE_DATE_EPOCH
 Standardized date for reproducible builds, see https://reproducible-builds.org/docs/source-date-epoch/ for more information.
 .SH EXAMPLES
+
+.EX
+.B
+genext2fs -r +5% -d src fs.ext2
+.EE
+
+Create a filesystem with the files from
+.I src
+directory. Compute blocks and inodes automatically and finally increment their size by 5%.
 
 .EX
 .B

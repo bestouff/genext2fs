@@ -59,6 +59,8 @@
  */
 #define _FILE_OFFSET_BITS 64
 
+#include<signal.h>
+
 #include <config.h>
 #include <stdio.h>
 
@@ -210,8 +212,6 @@ static uint32 blocksize = 1024;
 #define SUPERBLOCK_SIZE		1024
 
 #define BLOCKSIZE         blocksize
-#define BLOCKS_PER_GROUP  8192
-#define INODES_PER_GROUP  8192
 /* Percentage of blocks that are reserved.*/
 #define RESERVED_BLOCKS       5/100
 #define MAX_RESERVED_BLOCKS  25/100
@@ -465,6 +465,8 @@ getdelim(char **lineptr, size_t *n, int delim, FILE *stream)
 #define getline(a,b,c) getdelim(a,b,'\n',c)
 #endif /* HAVE_GETLINE */
 
+static void error_msg_and_die(const char *s, ...);
+
 // Convert a numerical string to a float, and multiply the result by an
 // IEC or SI multiplier if provided; supported multipliers are Ki, Mi, Gi, k, M
 // and G.
@@ -499,6 +501,66 @@ SI_atof(const char *nptr)
 	return f * m;
 }
 
+static uint64_t suffix(const char *s)
+{
+	const uint64_t k = 1000;
+	struct {
+		const char *str;
+		uint64_t    val;
+	} suffixes[] = {
+		{"k",     k}, {"ki", 1 << 10},
+		{"M",   k*k}, {"Mi", 1 << 20},
+		{"G", k*k*k}, {"Gi", 1 << 30},
+		{"%", UINT64_MAX},
+		{"", 1},
+	};
+	for (int i=0; i<sizeof(suffixes) / sizeof(suffixes[0]); ++i)
+		if (strcmp(suffixes[i].str, s) == 0)
+			return suffixes[i].val;
+	return 0;
+}
+
+static int min_groups(uint32_t blocks, uint32_t inodes, uint32_t fdb)
+{
+	uint32_t bits_per_block = 8 * BLOCKSIZE,
+		 min_blocks = (blocks + bits_per_block) / bits_per_block,
+		 min_inodes = (inodes + bits_per_block) / bits_per_block;
+
+	return min_blocks > min_inodes? min_blocks : min_inodes;
+}
+
+/** compute the adjusted value of x considering the suffix(s)
+ *
+ * @param [in] x - value to be adjusted
+ * @param [in] s - adjust string, one of the following formats[1]:
+ *
+ * [1] formats, where "N = [0-9]+":
+ *
+ * +N% +Nk  +NM  +NG +Nki +NMi +NGi
+ *  N%  Nk   NM   NG  Nki  NMi  NGi
+ *
+ *  assert(105   == adjust(100,  "+5%"));
+ *  assert(105   == adjust(100, "105%"));
+ *  assert(1<<10 == adjust(any,   "1k"));
+ *
+ *  @note: result may overflow */
+uint64_t adjust(uint64_t x, char *const s)
+{
+	char *end = s;
+	int inc = s[0] == '+';
+	uintmax_t v = strtoumax(s+inc, &end, 10);
+	uint64_t  m = suffix(end);
+
+	if (m == 0) error_msg_and_die("invalid readjustment\n");
+	if (m == UINT64_MAX) return (inc * x) + x * v / 100; // +? <x> %
+	else                 return (inc * x) + m * v;       // +? <x> k,M,G,ki,Mi,Gi
+}
+
+uintptr_t align(uintptr_t p, size_t a)
+{
+	return (p + (a-1)) & ~(a-1);
+}
+
 // endianness swap
 
 static inline uint16
@@ -512,6 +574,25 @@ swab32(uint32 val)
 {
 	return ((val>>24) | ((val>>8)&0xFF00) |
 			((val<<8)&0xFF0000) | (val<<24));
+}
+
+static uint32_t
+ifreg_blocks(uint64_t bytes, uint16_t lbs)
+{
+	uint16_t shl = 10u + lbs;
+	uint16_t bs = 1u << shl;
+	uint32_t blocks = (bytes+bs-1) >> shl;
+
+	uint32_t sh0 = shl-2,
+		 sh1 = sh0+sh0,
+		 sh2 = sh1+sh0;               // log(indirections per block) per depth
+	uint32_t fn0 = 12u,                   // first node of single indirection
+	         fn1 = fn0 + (1u << sh0),     // first node of double indirection
+	         fn2 = fn1 + (1u << sh1);     // first node of trebly indirection
+	return blocks
+	     + (blocks < fn0? 0 : (1 + ((blocks-fn0) >> sh0)))
+	     + (blocks < fn1? 0 : (1 + ((blocks-fn1) >> sh1)))
+	     + (blocks < fn2? 0 : (1 + ((blocks-fn2) >> sh2)));
 }
 
 static inline int
@@ -797,6 +878,13 @@ error_msg(const char *s, ...)
 	va_end(p);
 	putc('\n', stderr);
 }
+static void
+t_sys_break()
+{
+	fprintf(stderr, "gdb attach %d\n", getpid());
+	raise(SIGSTOP);
+}
+
 
 static void
 error_msg_and_die(const char *s, ...)
@@ -806,6 +894,8 @@ error_msg_and_die(const char *s, ...)
 	verror_msg(s, p);
 	va_end(p);
 	putc('\n', stderr);
+
+	//t_sys_break();
 	exit(EXIT_FAILURE);
 }
 
@@ -2338,7 +2428,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 				case '0':
 				case 0:
 				case '7':
-					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->nblocks += ifreg_blocks(filesize, BLOCKSIZE >> 11);
 				case '1':
 				case '6':
 				case '3':
@@ -2475,6 +2565,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 	char *path2, *path3, *dir, *name, *lnk;
 	size_t filesize;
 	uint32 uid, gid, mode, ctime, mtime;
+	uint32 dirbytes = 0, curdirbytes = 0;
+	const char *filepath;
 	a = archive_read_new();
 	if (a == NULL)
 		error_msg_and_die("Couldn't create archive reader.");
@@ -2504,18 +2596,34 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			{
 				case S_IFLNK:
 					if(filesize >= 4 * (EXT2_TIND_BLOCK+1))
-						stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+						stats->nblocks += align(filesize, BLOCKSIZE) / BLOCKSIZE;
 					stats->ninodes++;
 					break;
 				case S_IFREG:
-					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->nblocks += ifreg_blocks(filesize, BLOCKSIZE >> 11);
+					stats->ninodes++;
+					break;
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
 				case S_IFSOCK:
+					stats->nblocks++;
 					stats->ninodes++;
 					break;
 				case S_IFDIR:
+					filepath = archive_entry_pathname(entry);
+					if (filepath == NULL) {
+						error_msg("invalid filename %s\n", filepath);
+						continue;
+					}
+					curdirbytes = align(strlen(filepath), 4);
+					if (dirbytes + curdirbytes > BLOCKSIZE) {
+						dirbytes = curdirbytes;
+						stats->nblocks++;
+					} else {
+						dirbytes += curdirbytes;
+					}
+					stats->nblocks++;
 					stats->ninodes++;
 					break;
 				default:
@@ -2594,6 +2702,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		free(path2);
 		free(path3);
 	}
+	if (stats && (dirbytes != 0))
+		stats->nblocks++;
 	archive_read_close(a);
 	archive_read_free(a);
 #endif
@@ -2771,6 +2881,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	char *lnk;
 	uint32 save_nod, numdirs, i;
 	off_t filesize;
+	uint32 dirbytes = 0, curdirbytes = 0;
 
 	if((numdirs = scandir(".", &dents, NULL, alphasort)) == -1)
 		perror_msg_and_die(".");
@@ -2799,7 +2910,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					break;
 				case S_IFREG:
-					stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
+					stats->nblocks += ifreg_blocks((st.st_size), BLOCKSIZE >> 11);
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
@@ -2807,6 +2918,14 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					break;
 				case S_IFDIR:
+					curdirbytes = align(dent->d_reclen, 4);
+					if (dirbytes + curdirbytes > BLOCKSIZE) {
+						dirbytes = curdirbytes;
+						stats->nblocks++;
+					} else {
+						dirbytes += curdirbytes;
+					}
+					stats->nblocks++;
 					stats->ninodes++;
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
@@ -2908,6 +3027,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 		}
 		free(dent);
 	}
+	if (stats && (dirbytes != 0))
+		stats->nblocks++;
 	free(dents);
 }
 
@@ -3027,21 +3148,15 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	if(nbblocks < 8)
 		error_msg_and_die("too few blocks. Note: options have changed, see --help or the man page.");
 
-	/* nbinodes is the total number of inodes in the system.
-	 * a block group can have no more than 8192 inodes.
-	 */
-	min_nbgroups = (nbinodes + INODES_PER_GROUP - 1) / INODES_PER_GROUP;
-
 	/* On filesystems with 1k block size, the bootloader area uses a full
 	 * block. For 2048 and up, the superblock can be fitted into block 0.
 	 */
 	first_block = (BLOCKSIZE == 1024);
 
 	/* nbblocks is the total number of blocks in the filesystem.
-	 * a block group can have no more than 8192 blocks.
+	 * a block group can have no more than 8 * BLOCKSIZE blocks.
 	 */
-	nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
-	if(nbgroups < min_nbgroups) nbgroups = min_nbgroups;
+	nbgroups = min_groups(nbblocks, nbinodes, first_block);
 	nbblocks_per_group = rndup((nbblocks - first_block + nbgroups - 1)/nbgroups, 8);
 	nbinodes_per_group = rndup((nbinodes + nbgroups - 1)/nbgroups,
 						(BLOCKSIZE/sizeof(inode)));
@@ -3655,6 +3770,7 @@ showhelp(void)
 	"  -a, --tarball <file>[:path]       Copy from a tar archive into path (or root)\n"
 	"  -B, --block-size <bytes>\n"
 	"  -b, --size-in-blocks <blocks>\n"
+	"  -r, --readjustment <blocks>       Specify a number of blocks to be added on top of the automatic calculation\n"
 	"  -i, --bytes-per-inode <bytes per inode>\n"
 	"  -N, --number-of-inodes <number of inodes>\n"
 	"  -L, --volume-label <string>\n"
@@ -3727,6 +3843,7 @@ main(int argc, char **argv)
 	int i;
 	int c;
 	struct stats stats;
+	char adjust_string[64] = "+0%";
 
 #if HAVE_GETOPT_LONG
 	struct option longopts[] = {
@@ -3738,6 +3855,7 @@ main(int argc, char **argv)
 	  { "size-in-blocks",	required_argument,	NULL, 'b' },
 	  { "bytes-per-inode",	required_argument,	NULL, 'i' },
 	  { "number-of-inodes",	required_argument,	NULL, 'N' },
+	  { "readjustment",     required_argument,      NULL, 'r' },
 	  { "volume-label",     required_argument,      NULL, 'L' },
 	  { "reserved-percentage", required_argument,	NULL, 'm' },
 	  { "creator-os",	required_argument,	NULL, 'o' },
@@ -3756,11 +3874,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqUPhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -3784,6 +3902,9 @@ main(int argc, char **argv)
 				break;
 			case 'b':
 				nbblocks = SI_atof(optarg);
+				break;
+			case 'r':
+				strncpy(adjust_string, optarg, sizeof(adjust_string));
 				break;
 			case 'i':
 				bytes_per_inode = SI_atof(optarg);
@@ -3845,6 +3966,7 @@ main(int argc, char **argv)
 
 	if(blocksize != 1024 && blocksize != 2048 && blocksize != 4096)
 		error_msg_and_die("Valid block sizes: 1024, 2048 or 4096.");
+
 	if(creator_os < 0)
 		error_msg_and_die("Creator OS unknown.");
 
@@ -3871,6 +3993,7 @@ main(int argc, char **argv)
 	}
 	else
 	{
+		int groups;
 		if(reserved_frac == -1)
 			nbresrvd = nbblocks * RESERVED_BLOCKS;
 		else 
@@ -3880,9 +4003,23 @@ main(int argc, char **argv)
 		stats.nblocks = 0;
 
 		populate_fs(NULL, layers, nlayers, squash_uids, squash_perms, fs_timestamp, &stats);
+		//groups = (stats.nblocks / (8 * BLOCKSIZE)) > (stats.ninodes / (8 * BLOCKSIZE))?
+		//	 (stats.nblocks / (8 * BLOCKSIZE)) : (stats.ninodes / (8 * BLOCKSIZE));
+		//printf("nblocks: %ld, ninodes: %ld, groups: %d | %Ld\n", stats.nblocks, stats.ninodes, groups, nbblocks);
+		groups = min_groups(stats.nblocks, stats.ninodes, BLOCKSIZE == 1024);
+		//printf("nblocks: %ld, ninodes: %ld, groups: %d | %Ld\n", stats.nblocks, stats.ninodes, groups, nbblocks);
+		uint32_t nbinodes_per_group = rndup((stats.ninodes + groups - 1)/groups, (BLOCKSIZE/sizeof(inode)));
+		uint32_t gdsz = rndup(groups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE,
+			 itsz = nbinodes_per_group * sizeof(inode) / BLOCKSIZE;
+		stats.nblocks +=
+		( 1    // superblocks
+		+ 2    // bitmaps
+		+ gdsz // descriptor table
+		+ itsz // inodes per group
+		) * groups;
 
 		if(nbinodes == -1)
-			nbinodes = stats.ninodes;
+			nbinodes = adjust(stats.ninodes, adjust_string);
 		else
 			if(stats.ninodes > (unsigned long)nbinodes)
 			{
@@ -3903,6 +4040,17 @@ main(int argc, char **argv)
 				fs_timestamp = strtoll(source_date_epoch, NULL, 10);
 			}
 		}
+
+		if(nbblocks == -1) {
+			nbblocks = adjust(stats.nblocks, adjust_string);
+		} else {
+			if(stats.nblocks > (unsigned long)nbblocks)
+			{
+				fprintf(stderr, "number of blocks too low, increasing to %ld\n", stats.nblocks);
+				nbblocks = stats.nblocks;
+			}
+		}
+		//printf("nblocks: %ld, ninodes: %ld, groups: %d | %Ld\n", stats.nblocks, stats.ninodes, groups, nbblocks);
 		fs = init_fs(nbblocks, nbinodes, nbresrvd, holes,
 			     fs_timestamp, creator_os, bigendian, fsout);
 		fs_upgrade_rev1_largefile(fs);
