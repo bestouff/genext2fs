@@ -2741,8 +2741,8 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 	int nbargs, lineno = 0;
 
 	fstat(fileno(fh), &st);
-	ctime = fs_timestamp;
-	mtime = st.st_mtime;
+	ctime = fs_timestamp? st.st_ctime: 0;;
+	mtime = fs_timestamp? st.st_mtime: 0;
 	while(getline(&line, &len, fh) >= 0)
 	{
 		mode = uid = gid = major = minor = 0;
@@ -2893,8 +2893,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 		lstat(dent->d_name, &st);
 		uid = st.st_uid;
 		gid = st.st_gid;
-		ctime = fs_timestamp;
-		mtime = st.st_mtime;
+		ctime = fs_timestamp? st.st_ctime : 0;
+		mtime = fs_timestamp? st.st_mtime : 0;
 		name = dent->d_name;
 		mode = get_mode(&st);
 		if(squash_uids)
