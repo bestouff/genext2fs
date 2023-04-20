@@ -2766,17 +2766,17 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	uint32 uid, gid, mode, ctime, mtime;
 	const char *name;
 	FILE *fh;
-	DIR *dh;
-	struct dirent *dent;
+	struct dirent **dents = NULL;
 	struct stat st;
 	char *lnk;
-	uint32 save_nod;
+	uint32 save_nod, numdirs, i;
 	off_t filesize;
 
-	if(!(dh = opendir(".")))
+	if((numdirs = scandir(".", &dents, NULL, alphasort)) == -1)
 		perror_msg_and_die(".");
-	while((dent = readdir(dh)))
+	for (i = 0; i < numdirs; ++i)
 	{
+		struct dirent *dent = dents[i];
 		if((!strcmp(dent->d_name, ".")) || (!strcmp(dent->d_name, "..")))
 			continue;
 		lstat(dent->d_name, &st);
@@ -2906,8 +2906,9 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				fs->hdlinks.count++;
 			}
 		}
+		free(dent);
 	}
-	closedir(dh);
+	free(dents);
 }
 
 // Copy size blocks from src to dst, putting holes in the output
