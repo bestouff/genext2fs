@@ -116,9 +116,9 @@ Use a timestamp of 0 for inode and filesystem creation, instead of the present. 
 .BI "\-q, \-\-squash"
 Squash permissions and owners (same as -P -U).
 .TP
-.BI "\-U, \-\-squash\-uids"
+.BI "\-U, \-\-squash\-uids <id>"
 Squash ownership of inodes added using the -d option, making them all
-owned by root:root.
+owned by <id>:<id>.
 .TP
 .BI "\-P, \-\-squash\-perms"
 Squash permissions of inodes added using the -d option. Analogous to

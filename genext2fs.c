@@ -2402,8 +2402,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		major = OCTAL_READ(tarhead->major);
 		minor = OCTAL_READ(tarhead->minor);
 		type = tarhead->filetype;
-		if (squash_uids)
-			uid = gid = 0;
+		if (squash_uids != -1)
+			uid = gid = squash_uids;
 		if (squash_perms)
 			mode &= ~(FM_IRWXG | FM_IRWXO);
 		if(has_longname)
@@ -2642,8 +2642,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		}
 		uid = archive_entry_uid(entry);
 		gid = archive_entry_gid(entry);
-		if (squash_uids)
-			uid = gid = 0;
+		if (squash_uids != -1)
+			uid = gid = squash_uids;
 		if (squash_perms)
 			mode &= ~(FM_IRWXG | FM_IRWXO);
 		if(find_dir(fs, nod, name))
@@ -2897,8 +2897,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 		mtime = fs_timestamp? st.st_mtime : 0;
 		name = dent->d_name;
 		mode = get_mode(&st);
-		if(squash_uids)
-			uid = gid = 0;
+		if(squash_uids != -1)
+			uid = gid = squash_uids;
 		if(squash_perms)
 			mode &= ~(FM_IRWXG | FM_IRWXO);
 		if(stats)
@@ -3781,7 +3781,7 @@ showhelp(void)
 	"  -z, --allow-holes                 Allow files with holes.\n"
 	"  -f, --faketime                    Set filesystem timestamps to 0 (for testing).\n"
 	"  -q, --squash                      Same as \"-U -P\".\n"
-	"  -U, --squash-uids                 Squash owners making all files be owned by root.\n"
+	"  -U, --squash-uids <uid>           Squash owners making all files be owned by <id>:<id>.\n"
 	"  -P, --squash-perms                Squash permissions on all files.\n"
 	"  -h, --help\n"
 	"  -V, --version\n"
@@ -3834,7 +3834,7 @@ main(int argc, char **argv)
 	int verbose = 0;
 	int holes = 0;
 	int emptyval = 0;
-	int squash_uids = 0;
+	int squash_uids = -1;
 	int squash_perms = 0;
 	uint16 endian = 1;
 	int bigendian = !*(char*)&endian;
@@ -3874,11 +3874,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqU:PhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:r:L:m:o:g:e:zfqU:PhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -3934,11 +3934,11 @@ main(int argc, char **argv)
 				fs_timestamp = 0;
 				break;
 			case 'q':
-				squash_uids = 1;
+				squash_uids = atoi(optarg);
 				squash_perms = 1;
 				break;
 			case 'U':
-				squash_uids = 1;
+				squash_uids = atoi(optarg);
 				break;
 			case 'P':
 				squash_perms = 1;
