@@ -41,7 +41,7 @@ AC_MSG_CHECKING(--enable-libarchive argument)
 AC_ARG_ENABLE(libarchive,
     [  --enable-libarchive        Include libarchive support.],
     [enable_libarchive=$enableval],
-    [enable_libarchive="no"])
+    [enable_libarchive="yes"])
 AC_MSG_RESULT($enable_libarchive)
 if test "$enable_libarchive" = "yes"; then
 # Check for libarchive (no pkg-config support)

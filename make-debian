@@ -1,0 +1,13 @@
+#/bin/sh
+SUDO=$(which sudo)
+$SUDO apt update \
+&& $SUDO apt install -y --no-install-recommends \
+	autotools-dev \
+	automake \
+	build-essential \
+	libarchive-dev \
+&& ./autogen.sh \
+&& ./configure --enable-libarchive --prefix=$PWD/release/ \
+&& make \
+&& make install \
+&& dpkg-deb -Zxz --root-owner-group --build release/ genext2fs.deb

@@ -1,0 +1,8 @@
+Package: genext2fs
+Version: 1.5.1
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: marcelo <marcelo.politzer@cartesi.io>
+Description: This is a test application for packaging
+Depends: libarchive13
