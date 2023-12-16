@@ -18,8 +18,16 @@ jobs:
 
       - name: Build 
         run: |
-          docker run --rm -v $PWD:/app -w /app ubuntu:22.04 /app/build.sh
-          tar -czvf genext2fs.tar.gz genext2fs
+          docker run --rm -v $PWD:/app/src -w /app/src ubuntu:22.04 bash -c " \
+            sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list; \
+            apt-get update && apt-get install -y devscripts build-essential lintian debhelper wget && \
+            apt-get build-dep -y genext2fs && \
+            wget http://deb.debian.org/debian/pool/main/g/genext2fs/genext2fs_1.5.0.orig.tar.gz && \
+            mv genext2fs_1.5.0.orig.tar.gz ../ && \
+            debuild -S -us -uc; \
+            debuild -us -uc; \
+            mv ../genext2fs_*.deb ./genext2fs.deb; \
+            "
 
       - name: Save package
         uses: actions/upload-artifact@v3
@@ -46,8 +54,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./genext2fs.tar.gz
-          asset_name: genext2fs.tar.gz
+          asset_path: ./genext2fs.deb
+          asset_name: genext2fs.deb
           asset_content_type: application/gzip
 
       - name: Publish release
