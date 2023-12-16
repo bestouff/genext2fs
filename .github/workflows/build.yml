@@ -18,10 +18,10 @@ jobs:
 
       - name: Build 
         run: |
-          docker run --rm -v $PWD:/app/src -w /app/src ubuntu:22.04 bash -c " \
+          docker run --rm -v $PWD:/app/src -w /app/src ubuntu:20.04 bash -c " \
             export DEBIAN_FRONTEND=noninteractive; \
             sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list; \
-            apt-get update && apt-get install -y devscripts build-essential lintian debhelper wget && \
+            apt-get update && apt-get install -y devscripts build-essential lintian debhelper wget libarchive-dev && \
             apt-get build-dep -y genext2fs && \
             wget http://deb.debian.org/debian/pool/main/g/genext2fs/genext2fs_1.5.0.orig.tar.gz && \
             mv genext2fs_1.5.0.orig.tar.gz ../ && \

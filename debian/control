@@ -7,7 +7,7 @@ Vcs-Browser: https://salsa.debian.org/debian/genext2fs
 Build-Depends:
  autoconf,
  automake,
- debhelper-compat (= 13),
+ debhelper-compat (= 12),
  libarchive-dev,
 Build-Conflicts:
  autoconf2.13,
