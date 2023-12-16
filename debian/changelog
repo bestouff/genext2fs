@@ -1,9 +1,250 @@
+genext2fs (1.5.0-3ubuntu1) UNRELEASED; urgency=medium
+
+  * Skip device if parent is a file and not a dir
+
+ -- Zak Estrada <zachary.estrada@ll.mit.edu>  Sat, 16 Dec 2023 09:07:13 -0500
+
+genext2fs (1.5.0-3) unstable; urgency=medium
+
+  * debian/tests/control: run wrap-and-sort -astb
+  * debian/control: make Multi-Arch:foreign
+
+ -- Johannes Schauer Marin Rodrigues <josch@debian.org>  Mon, 19 Sep 2022 06:05:48 +0200
+
+genext2fs (1.5.0-2) unstable; urgency=medium
+
+  [ Balint Reczey ]
+  * debian/tests/general: Don't follow symlinks in result comparison
+    (LP: #1910549)
+
+  [ Debian Janitor ]
+  * Remove constraints unnecessary since buster
+
+  [ Johannes Schauer Marin Rodrigues ]
+  * fix up my name in d/copyright and d/control
+  * Enable system locale - change from the standard (C) to system locale.
+
+ -- Johannes Schauer Marin Rodrigues <josch@debian.org>  Sun, 26 Dec 2021 22:17:34 +0100
+
+genext2fs (1.5.0-1) unstable; urgency=medium
+
+  [ Debian Janitor ]
+  * Set upstream metadata fields: Bug-Database, Bug-Submit.
+
+  [ Johannes 'josch' Schauer ]
+  * new upstream version
+  * add debian/watch
+  * drop patches
+  * debian/tests/general: adjust new tarball on stdin interface
+  * debian/control: bump dh compat to 13
+  * debian/upstream/metadata: add Repository and Repository-Browse fields
+
+ -- Johannes 'josch' Schauer <josch@debian.org>  Fri, 26 Jun 2020 10:11:37 +0200
+
+genext2fs (1.4.2-3) unstable; urgency=medium
+
+  * debian/tests/general: export LIBGUESTFS_BACKEND_SETTINGS=force_tcg as
+    workaround for #958751 (closes: #958733)
+
+ -- Johannes 'josch' Schauer <josch@debian.org>  Sat, 25 Apr 2020 00:50:27 +0200
+
+genext2fs (1.4.2-2) unstable; urgency=medium
+
+  * debian/tests/control: make kernel image architecture-specific
+
+ -- Johannes 'josch' Schauer <josch@debian.org>  Thu, 09 Apr 2020 23:54:45 +0200
+
+genext2fs (1.4.2-1) unstable; urgency=medium
+
+  * new upstream version (closes: #954871)
+  * debian/control: Adopting package with previous maintainer consent
+  * debian/control: bump standards-version (no changes)
+  * debian/control: add Rules-Requires-Root:no
+  * debian/control: change vcs fields to salsa
+  * debian/rules: add DEB_BUILD_MAINT_OPTIONS = hardening=+all
+  * debian/control: add Homepage field
+  * debian/copyright: use dep5
+  * debian/rules: remove old cruft (newer debhelper runs autoreconf for us)
+  * debian/rules: run test.sh (except with nocheck)
+  * add patches from upstream pull requests:
+     - support SOURCE_DATE_EPOCH
+     - allow tarballs on stdin
+     - support changing permissions of /
+  * add autopkgtest
+  * run wrap-and-sort -asbt
+  * remove debian/watch: project moved to github without release tags
+
+ -- Johannes 'josch' Schauer <josch@debian.org>  Wed, 08 Apr 2020 10:08:50 +0200
+
+genext2fs (1.4.1-4) unstable; urgency=low
+
+  * debian/patches/byteswap_fix.diff: New patch by Samuel Thibault,
+    fix a segfault in the byte swapping code on little-endian architectures
+    (closes: 644776).
+
+ -- Jérémie Koenig <jk@jk.fr.eu.org>  Tue, 29 Nov 2011 17:42:14 +0100
+
+genext2fs (1.4.1-3) unstable; urgency=low
+
+  * New maintainer (closes: 579369).
+  * Packaging cleanup:
+    - update autotools dependencies;
+    - update to debhelper 8;
+    - switch to source format 3.0 (quilt);
+    - bump Standards-Version to 3.9.2.
+  * debian/patches/blocksize+creator.diff: New patch, add options -B and -o
+    to select the block size and creator OS (closes: 562999).
+  * Add Vcs-Git and Vcs-Browser fields to debian/control.
+  * Add debian/gbp.conf (configuration for git-buildpackage).
+
+ -- Jérémie Koenig <jk@jk.fr.eu.org>  Sat, 03 Sep 2011 21:35:48 +0200
+
+genext2fs (1.4.1-2.2) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Build depend on automake instead of automake1.4. (Closes: #549097).
+  * Version GPL version in debian/copyright.
+  * Bump Standards Version to 3.8.3.
+
+ -- Barry deFreese <bdefreese@debian.org>  Wed, 30 Sep 2009 14:49:16 -0400
+
+genext2fs (1.4.1-2.1) unstable; urgency=low
+
+  * Non-Maintainer Upload, at BSP in Zurich
+  * in sscanf the "a" could mean "malloc" or the new C99 floating,
+    so don't use it, not to have surprises.
+
+ -- Giacomo Catenazzi <cate@debian.org>  Sat, 12 Jan 2008 23:03:59 +0100
+
+genext2fs (1.4.1-2) unstable; urgency=low
+
+  * configure.in: Change AC_CONFIG_HEADER to AM_CONFIG_HEADER.
+
+ -- Franz Pletz <fpletz@franz-pletz.org>  Sun, 29 Jul 2007 19:13:04 +0200
+
+genext2fs (1.4.1-1) unstable; urgency=low
+
+  * New upstream release. (Closes: #406078)
+  * clean.sh: updated.
+  * Switch to debhelper 5.
+
+ -- Franz Pletz <fpletz@franz-pletz.org>  Sun, 29 Jul 2007 19:10:18 +0200
+
+genext2fs (1.4-rc1-2.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * FTBFS: Cannot satisfy Build-Depends on automake (Closes: #395150)
+
+ -- Neil Williams <codehelp@debian.org>  Fri, 27 Oct 2006 19:08:55 +0100
+
+genext2fs (1.4-rc1-2) unstable; urgency=low
+
+  * Fixed description (Closes: #371083)
+
+ -- Franz Pletz <fpletz@franz-pletz.org>  Mon, 26 Jun 2006 10:50:19 +0200
+
+genext2fs (1.4-rc1-1) unstable; urgency=low
+
+  * New upstream release, removed cvs blurb from diff.
+  * debian/control:
+    - New Maintainer. (Closes: #369191)
+    - Tweaked Description.
+    - Bumped Standards-Version to 3.7.2, no further changes necessary.
+  * Updated debian/changelog.
+  * debian/rules:
+    - Moved debhelper compatibility level setting to debian/compat.
+    - Miscellaneous minor cleanups.
+  * Added debian/watch.
+
+ -- Franz Pletz <fpletz@franz-pletz.org>  Sun, 28 May 2006 15:47:23 +0200
+
+genext2fs (1.3-10) unstable; urgency=low
+
+  * Add build depends on automake and autoconf. (Closes: #341750)
+
+ -- David Kimdon <dwhedon@debian.org>  Mon,  5 Dec 2005 18:09:00 -0800
+
+genext2fs (1.3-9) unstable; urgency=low
+
+  * chmod +x clean.sh before running it. (Closes: #341457)
+
+ -- David Kimdon <dwhedon@debian.org>  Thu,  1 Dec 2005 17:45:34 -0800
+
+genext2fs (1.3-8) unstable; urgency=low
+
+  * Update to upstream cvs as of 29-11-2005.  This is similar to what 1.4
+    will be.
+    Preserve permissions. (Closes: #341173)
+    Create lost+found (Closes: #258661)
+
+ -- David Kimdon <dwhedon@debian.org>  Tue, 29 Nov 2005 11:12:31 -0800
+
+genext2fs (1.3-7.1) unstable; urgency=high
+
+  * Non-maintainer upload.
+  * Apply patch from Finn Thain to fix byteswapping code issues that broke
+    d-i on several arches. Thanks. (Closes: #266039)
+
+ -- Joshua Kwan <joshk@triplehelix.org>  Tue, 24 Aug 2004 19:09:01 -0700
+
+genext2fs (1.3-7) unstable; urgency=low
+
+  * Fix block count rounding.  The -b switch again specifies the
+    size of the resulting filesystem image.
+    Patch thanks to Finn Thain <ft01@webmastery.com.au>
+    (closes: #262352)
+
+ -- David Kimdon <dwhedon@debian.org>  Sat,  7 Aug 2004 09:51:37 +0200
+
+genext2fs (1.3-6) unstable; urgency=low
+
+  * Fix block counts, now created image fsck clean. (closes: #232023)
+    Thanks to Finn Thain <ft01@webmastery.com.au> for the fix.
+
+ -- David Kimdon <dwhedon@debian.org>  Sat, 10 Jul 2004 17:37:17 +0200
+
+genext2fs (1.3-5) unstable; urgency=low
+
+  * - Compile with -O2.
+    - get_workblk() should return zero'd memory.  This way we get
+      nul terminations in the produced image.
+    - get_workblk() now allocates the block dynamically on the heap.
+      The previous method of allocating the block as 'static' apparently
+      results in undefined behavior since get_workblk() is 'inline'.
+    Thanks to Vincent Sanders <vince@debian.org> for the patch.
+    (closes: #248987)
+
+ -- David Kimdon <dwhedon@debian.org>  Sat, 15 May 2004 19:37:54 +0200
+
+genext2fs (1.3-4) unstable; urgency=low
+
+  * Fix assertion failure when there is a 268K file on the
+    filesystem.  Patch thanks to Matt Kraai <kraai@alumni.cmu.edu>
+    (closes: #201277)
+
+ -- David Kimdon <dwhedon@debian.org>  Mon, 17 Nov 2003 22:53:15 +0100
+
+genext2fs (1.3-3) unstable; urgency=low
+
+  * Update to current upstream cvs
+     - support triple indirect blocks (removes 8MB limit)
+     - support for groups.
+
+ -- David Kimdon <dwhedon@debian.org>  Sat, 11 Jan 2003 18:45:58 -0800
+
+genext2fs (1.3-2) unstable; urgency=low
+
+  * apply fix from upstream cvs that appears to fix endian bug
+    (closes: #122411)
+  * mention filesystem size limit in manpage (closes: #122729)
+  * mention that hard links are not supported in manpage
+    (closes: #155464)
+  * add sanity check at the end of the build
+
+ -- David Kimdon <dwhedon@debian.org>  Fri,  8 Mar 2002 23:17:36 -0800
+
 genext2fs (1.3-1) unstable; urgency=low
 
   * Initial Release. (closes: #105263)
 
  -- David Kimdon <dwhedon@debian.org>  Sat, 14 Jul 2001 13:24:49 -0700
-
-Local variables:
-mode: debian-changelog
-End:
