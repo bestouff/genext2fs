@@ -19,6 +19,7 @@ jobs:
       - name: Build 
         run: |
           docker run --rm -v $PWD:/app/src -w /app/src ubuntu:22.04 bash -c " \
+            export DEBIAN_FRONTEND=noninteractive; \
             sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list; \
             apt-get update && apt-get install -y devscripts build-essential lintian debhelper wget && \
             apt-get build-dep -y genext2fs && \
