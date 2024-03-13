@@ -16,6 +16,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Get next version
+        uses: reecetech/version-increment@2023.10.1
+        id: version
+        with:
+          use_api: true
+
       - name: Build 
         run: |
           docker run --rm -v $PWD:/app/src -w /app/src ubuntu:20.04 bash -c " \
@@ -35,17 +41,17 @@ jobs:
         with:
           name: genext2fs
           path: build
-
+      
       - name: Create release
         id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: release_${{ github.sha }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          release_name: Release ${{ steps.version.outputs.v-version }} ${{ github.ref }}
           body: |
-            Release @${{ github.ref }}
+            Release ${{ steps.version.outputs.v-version }} @${{ github.ref }}
           draft: true
           prerelease: false
 
