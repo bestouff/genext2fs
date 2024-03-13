@@ -1,0 +1,73 @@
+name: Compile and Publish genext2fs
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get next version
+        uses: reecetech/version-increment@2023.10.1
+        id: version
+        with:
+          use_api: true
+
+      - name: Build 
+        run: |
+          docker run --rm -v $PWD:/app/src -w /app/src ubuntu:20.04 bash -c " \
+            export DEBIAN_FRONTEND=noninteractive; \
+            sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list; \
+            apt-get update && apt-get install -y devscripts build-essential lintian debhelper wget libarchive-dev && \
+            apt-get build-dep -y genext2fs && \
+            wget http://deb.debian.org/debian/pool/main/g/genext2fs/genext2fs_1.5.0.orig.tar.gz && \
+            mv genext2fs_1.5.0.orig.tar.gz ../ && \
+            debuild -S -us -uc; \
+            debuild -us -uc; \
+            mv ../genext2fs_*.deb ./genext2fs.deb; \
+            "
+
+      - name: Save package
+        uses: actions/upload-artifact@v3
+        with:
+          name: genext2fs
+          path: build
+      
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.v-version }}
+          release_name: Release ${{ steps.version.outputs.v-version }} ${{ github.ref }}
+          body: |
+            Release ${{ steps.version.outputs.v-version }} @${{ github.ref }}
+          draft: true
+          prerelease: false
+
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./genext2fs.deb
+          asset_name: genext2fs.deb
+          asset_content_type: application/gzip
+
+      - name: Publish release
+        uses: StuYarrow/publish-release@v1.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          id: ${{ steps.create_release.outputs.id }}

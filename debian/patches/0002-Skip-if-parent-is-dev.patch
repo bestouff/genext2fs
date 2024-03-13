@@ -1,0 +1,67 @@
+Description: <short summary of the patch>
+ TODO: Put a short summary on the line above and replace this paragraph
+ with a longer explanation of this change. Complete the meta-information
+ with other relevant fields (see below for details). To make it easier, the
+ information below has been extracted from the changelog. Adjust it or drop
+ it.
+ .
+ genext2fs (1.5.0-3ubuntu1) UNRELEASED; urgency=medium
+ .
+   * Skip device if parent is a file and not a dir
+Author: Zak Estrada <zachary.estrada@ll.mit.edu>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: <url in upstream bugtracker>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <name and email of someone who approved the patch>
+Last-Update: 2023-12-16
+
+--- genext2fs-1.5.0.orig/genext2fs.c
++++ genext2fs-1.5.0/genext2fs.c
+@@ -2648,6 +2648,8 @@ add2fs_from_file(filesystem *fs, uint32
+ 	size_t len;
+ 	struct stat st;
+ 	int nbargs, lineno = 0;
++	nod_info *ni;
++	inode *pnode;
+ 
+ 	fstat(fileno(fh), &st);
+ 	ctime = fs_timestamp;
+@@ -2703,6 +2705,14 @@ add2fs_from_file(filesystem *fs, uint32
+ 			{
+ 				error_msg("device table line %d skipped: can't find directory '%s' to create '%s''", lineno, dir, name);
+ 				continue;
++			} else {
++				pnode = get_nod(fs, nod, &ni);
++				if((pnode->i_mode & FM_IFMT) != FM_IFDIR) {
++					error_msg("device table line %d skipped: parent '%s' is not a directory so won't create '%s''", lineno, dir, name);
++					put_nod(ni);
++					continue;
++				}
++				put_nod(ni);
+ 			}
+ 		}
+ 		else
+@@ -3871,13 +3881,13 @@ main(int argc, char **argv)
+ 		if (strcmp(layers[i].path, "-") == 0)
+ 			numstdin++;
+ 	if (numstdin == 1 && nbinodes == -1 && bytes_per_inode == -1)
+-		fprintf(stderr, "Cannot count the required inodes for input from stdin -- use the -N or -i options to set the number of inodes or work with temporary files.");
++		fprintf(stderr, "Cannot count the required inodes for input from stdin -- use the -N or -i options to set the number of inodes or work with temporary files.\n");
+ 	if (numstdin > 1)
+ 		error_msg_and_die("only one input can come from stdin");
+ 
+ 	if(fsin)
+ 	{
+-		fprintf(stderr, "starting from existing image %s", fsin);
++		fprintf(stderr, "starting from existing image %s\n", fsin);
+ 		if(strcmp(fsin, "-"))
+ 		{
+ 			FILE * fh = xfopen(fsin, "rb");

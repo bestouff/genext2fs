@@ -1,0 +1,66 @@
+From 6909cdeca83d1b1057dd50f2cc55cbd95b1d8cd2 Mon Sep 17 00:00:00 2001
+From: Johannes Schauer Marin Rodrigues <josch@mister-muffin.de>
+Date: Sun, 26 Dec 2021 22:12:10 +0100
+Subject: [PATCH] Enable system locale - change from the standard (C) to system
+ locale.
+
+This allows libarchive (in case it is activated) to handle filenames.
+We only change LC_CTYPE since libarchive only needs the charset set.
+We don't use LC_ALL because it causes problems on some systems.
+We restore the original LC_CTYPE after extraction to avoid side effects.
+We use uselocale instead of setlocale to avoid setting LC_CTYPE globally.
+See on libarchive Website for a more complete description of the issue:
+ https://github.com/libarchive/libarchive/issues/587
+ https://github.com/libarchive/libarchive/wiki/Filenames
+ https://github.com/sbabic/swupdate/blob/master/handlers/archive_handler.c#L94
+---
+ genext2fs.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/genext2fs.c b/genext2fs.c
+index 96bbb43..f0b4c77 100644
+--- a/genext2fs.c
++++ b/genext2fs.c
+@@ -151,6 +151,7 @@
+ #ifdef HAVE_LIBARCHIVE
+ #include <archive.h>
+ #include <archive_entry.h>
++#include <locale.h>
+ #endif
+ 
+ #include "cache.h"
+@@ -2475,6 +2476,22 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
+ 	char *path2, *path3, *dir, *name, *lnk;
+ 	size_t filesize;
+ 	uint32 uid, gid, mode, ctime, mtime;
++	locale_t archive_locale;
++	locale_t old_locale;
++	/*
++	 * Enable system locale - change from the standard (C) to system locale.
++	 * This allows libarchive (in case it is activated) to handle filenames.
++	 * We only change LC_CTYPE since libarchive only needs the charset set.
++	 * We don't use LC_ALL because it causes problems on some systems.
++	 * We restore the original LC_CTYPE after extraction to avoid side effects.
++	 * We use uselocale instead of setlocale to avoid setting LC_CTYPE globally.
++	 * See on libarchive Website for a more complete description of the issue:
++	 *  https://github.com/libarchive/libarchive/issues/587
++	 *  https://github.com/libarchive/libarchive/wiki/Filenames
++	 *  https://github.com/sbabic/swupdate/blob/master/handlers/archive_handler.c#L94
++	 */
++	archive_locale = newlocale(LC_CTYPE_MASK, "", (locale_t)0);
++	old_locale = uselocale(archive_locale);
+ 	a = archive_read_new();
+ 	if (a == NULL)
+ 		error_msg_and_die("Couldn't create archive reader.");
+@@ -2596,6 +2613,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
+ 	}
+ 	archive_read_close(a);
+ 	archive_read_free(a);
++	uselocale(old_locale);
++	freelocale(archive_locale);
+ #endif
+ }
+ 
+-- 
+2.33.0
+

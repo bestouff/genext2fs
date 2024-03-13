@@ -1,0 +1,85 @@
+#!/bin/sh
+
+set -exu
+
+export SOURCE_DATE_EPOCH=$(date +%s)
+
+if [ "$(dpkg --print-architecture)" != amd64 ]; then
+	echo "export LIBGUESTFS_BACKEND_SETTINGS=force_tcg as workaround for #958751">&2
+	export LIBGUESTFS_BACKEND_SETTINGS=force_tcg
+fi
+
+debootstrap --variant=minbase unstable rootfs.in
+tar --numeric-owner --sort=name -C rootfs.in -cf rootfs.in.tar .
+numblocks=$(du --apparent-size --block-size 1024 --summarize rootfs.in | cut -f 1)
+# add 5% more blocks than strictly needed
+numblocks=$((numblocks+numblocks/10))
+
+genext2fs -B 1024 -b $numblocks -d rootfs.in rootfs.dir.img
+rm -rf rootfs.in
+
+genext2fs -B 1024 -b $numblocks -i 16384 -a - rootfs.tar.img < rootfs.in.tar
+genext2fs -B 1024 -b $numblocks -i 16384 -a - rootfs2.tar.img < rootfs.in.tar
+
+# make sure that SOURCE_DATE_EPOCH was respected and images are bit-by-bit identical
+cmp rootfs.tar.img rootfs2.tar.img
+rm rootfs2.tar.img
+
+for img in rootfs.dir.img rootfs.tar.img; do
+	guestfish add-ro "$img" : run : mount /dev/sda / : tar-out / rootfs.tar
+
+	mkdir rootfs.in
+	tar -C rootfs.in -xf rootfs.in.tar
+
+	mkdir rootfs.out
+	tar -C rootfs.out -xf rootfs.tar
+	rm rootfs.tar
+	rmdir rootfs.out/lost+found
+
+	# diff cannot compare device nodes, so we use tar to do that for us and then
+	# delete the directory
+	tar --numeric-owner --sort=name -C rootfs.in -cf dev1.tar ./dev
+	tar --numeric-owner --sort=name -C rootfs.out -cf dev2.tar ./dev
+	ret=0
+	cmp dev1.tar dev2.tar || ret=$?
+	if [ "$ret" -ne 0 ]; then
+		if type diffoscope >/dev/null; then
+			diffoscope dev1.tar dev2.tar
+			exit 1
+		else
+			echo "no diffoscope installed" >&2
+		fi
+		if type base64 >/dev/null; then
+			base64 dev1.tar
+			base64 dev2.tar
+			exit 1
+		else
+			echo "no base64 installed" >&2
+		fi
+		if type xxd >/dev/null; then
+			xxd dev1.tar
+			xxd dev2.tar
+			exit 1
+		else
+			echo "no xxd installed" >&2
+		fi
+		exit 1
+	fi
+	rm dev1.tar dev2.tar
+	rm -r rootfs.in/dev rootfs.out/dev
+
+	# compare file content
+	diff -rq --no-dereference rootfs.in rootfs.out
+
+	# check permissions, ownership, symlink targets, modification times
+	tar -C rootfs.in --numeric-owner --sort=name -cf root1.tar .
+	tar -C rootfs.out --numeric-owner --sort=name -cf root2.tar .
+	tar --full-time --verbose -tf root1.tar > root1.tar.list
+	tar --full-time --verbose -tf root2.tar > root2.tar.list
+	diff -u root1.tar.list root2.tar.list
+	rm root1.tar root2.tar root1.tar.list root2.tar.list
+
+	rm -rf rootfs.in rootfs.out
+done
+
+rm rootfs.dir.img rootfs.tar.img rootfs.in.tar

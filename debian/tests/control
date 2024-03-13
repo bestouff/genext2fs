@@ -1,0 +1,9 @@
+Tests: general
+Restrictions: allow-stderr, needs-root
+Depends:
+ debootstrap,
+ libguestfs-tools,
+ linux-image-amd64 [amd64],
+ linux-image-arm64 [arm64],
+ linux-image-powerpc64le [ppc64el],
+ @,
