@@ -32,7 +32,7 @@ AC_CHECK_MEMBERS([struct stat.st_rdev])
 
 # Checks for library functions.
 AC_CHECK_FUNCS([getopt_long getline strtof])
-AC_FUNC_SNPRINTF
+AX_FUNC_SNPRINTF
 AC_FUNC_SCANF_CAN_MALLOC
 
 AC_MSG_CHECKING(--enable-libarchive argument)
