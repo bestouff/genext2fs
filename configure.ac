@@ -4,9 +4,7 @@
 AC_PREREQ(2.59)
 AC_INIT([genext2fs], [1.4.2])
 AC_CONFIG_SRCDIR([genext2fs.c])
-
-builtin(include, [m4/ac_func_snprintf.m4])dnl
-builtin(include, [m4/ac_func_scanf_can_malloc.m4])dnl
+AC_CONFIG_MACRO_DIRS([m4])
 
 AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_HEADER([config.h])
