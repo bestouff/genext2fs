@@ -1,3 +1,19 @@
+/* vi: set sw=8 ts=8: */
+// cache.h
+//
+// ext2 filesystem generator for embedded systems
+// Copyright (C) 2012 Xavier Bestel <xav@bes.tel>
+//
+// Please direct support requests to https://github.com/bestouff/genext2fs/issues
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; version
+// 2 of the License.
+//
+// Changes:
+// 	25 Jun 2012	Initial release
+
 #ifndef __CACHE_H__
 #define __CACHE_H__
 
