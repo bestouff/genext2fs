@@ -2252,6 +2252,71 @@ int is_zero(char *block, size_t size)
 	return 1;
 }
 
+// Calculate total blocks needed on disk for a file of given size,
+// including indirect, double-indirect and triple-indirect blocks.
+static long
+calc_file_alloc_blocks(unsigned long size)
+{
+	const long double_blocks = ADDR_PER_BLOCK * ADDR_PER_BLOCK;
+	long file_blocks = (size + BLOCKSIZE - 1) / BLOCKSIZE;
+	long final_file_blocks;
+
+	/* Total file data blocks:
+	 *  - direct blocks:         EXT2_NDIR_BLOCKS
+	 *  - 1st indirect blocks: + ADDR_PER_BLOCK
+	 *  - 2nd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK
+	 *  - 3rd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK
+	 *
+	 * Total blocks allocated on disk:
+	 *  - direct blocks:         EXT2_NDIR_BLOCKS
+	 *  - 1st indirect blocks: + (1 + ADDR_PER_BLOCK)
+	 *  - 2nd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK)
+	 *  - 3rd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK)
+	 */
+
+	if(file_blocks <= EXT2_NDIR_BLOCKS)
+		return file_blocks;
+
+	// All direct blocks used
+	file_blocks -= EXT2_NDIR_BLOCKS;
+	final_file_blocks = EXT2_NDIR_BLOCKS;
+
+	// Need 1st indirection
+	if(file_blocks <= (long)ADDR_PER_BLOCK)
+	{
+		// +1 indirect block
+		final_file_blocks += 1 + file_blocks;
+		return final_file_blocks;
+	}
+
+	// All 1st indirect blocks used
+	file_blocks -= ADDR_PER_BLOCK;
+	final_file_blocks += 1 + ADDR_PER_BLOCK;
+
+	// Need 2nd indirection
+	if(file_blocks <= double_blocks)
+	{
+		long indirect_blocks = 1 + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
+		final_file_blocks += file_blocks + indirect_blocks;
+		return final_file_blocks;
+	}
+
+	// All 2nd indirect blocks used
+	file_blocks -= double_blocks;
+	final_file_blocks += 1 + ADDR_PER_BLOCK + double_blocks;
+
+	// Need 3rd indirection
+	if(file_blocks / double_blocks <= (long)ADDR_PER_BLOCK)
+	{
+		long indirect_blocks = 1 + (file_blocks + double_blocks - 1) / double_blocks
+		                         + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
+		final_file_blocks += file_blocks + indirect_blocks;
+		return final_file_blocks;
+	}
+
+	return -1;
+}
+
 static void
 add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
 {
@@ -2331,6 +2396,10 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 		{
 			switch (type)
 			{
+				case '5':
+					stats->ninodes++;
+					stats->nblocks++; // each directory uses at least 1 block
+					break;
 				case '2':
 					if (strlen(tarhead->linkedname) >= 4 * (EXT2_TIND_BLOCK+1))
 						stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
@@ -2339,7 +2408,12 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 				case '0':
 				case 0:
 				case '7':
-					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+				{
+					long total_blocks = calc_file_alloc_blocks(filesize);
+					if(total_blocks == -1)
+						error_msg_and_die("%s: file too large", path);
+					stats->nblocks += total_blocks;
+				}
 				case '1':
 				case '6':
 				case '3':
@@ -2509,7 +2583,12 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					stats->ninodes++;
 					break;
 				case S_IFREG:
-					stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
+				{
+					long total_blocks = calc_file_alloc_blocks(filesize);
+					if(total_blocks == -1)
+						error_msg_and_die("file too large");
+					stats->nblocks += total_blocks;
+				}
 				case S_IFCHR:
 				case S_IFBLK:
 				case S_IFIFO:
@@ -2518,6 +2597,7 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					break;
 				case S_IFDIR:
 					stats->ninodes++;
+					stats->nblocks++; // each directory uses at least 1 block
 					break;
 				default:
 					break;
@@ -2759,70 +2839,6 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 		free(path2);
 }
 
-static long
-calc_file_alloc_blocks(unsigned long size)
-{
-	const int double_blocks = ADDR_PER_BLOCK * ADDR_PER_BLOCK;
-	long file_blocks = (size + BLOCKSIZE - 1) / BLOCKSIZE;
-	long final_file_blocks;
-
-	/* Total file data blocks:
-	 *  - direct blocks:         EXT2_NDIR_BLOCKS
-	 *  - 1st indirect blocks: + ADDR_PER_BLOCK
-	 *  - 2nd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK
-	 *  - 3rd indirect blocks: + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK
-	 *
-	 * Total blocks allocated in disk:
-	 *  - direct blocks:         EXT2_NDIR_BLOCKS
-	 *  - 1st indirect blocks: + (1 + ADDR_PER_BLOCK)
-	 *  - 2nd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK)
-	 *  - 3rd indirect blocks: + (1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK)
-	 */
-
-	if(file_blocks <= EXT2_NDIR_BLOCKS)
-		return file_blocks;
-
-	// All direct blocks used
-	file_blocks -= EXT2_NDIR_BLOCKS;
-	final_file_blocks = EXT2_NDIR_BLOCKS;
-
-	// Need 1st indirection
-	if(file_blocks <= ADDR_PER_BLOCK)
-	{
-		// +1 indirect block
-		final_file_blocks += 1 + file_blocks;
-		return final_file_blocks;
-	}
-
-	// All 1st indirect blocks used
-	file_blocks -= ADDR_PER_BLOCK;
-	final_file_blocks += 1 + ADDR_PER_BLOCK;
-
-	// Need 2nd indirection
-	if(file_blocks <= double_blocks)
-	{
-		int indirect_blocks = 1 + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
-		final_file_blocks += file_blocks + indirect_blocks;
-		return final_file_blocks;
-	}
-
-	// All 2nd indirect blocks used
-	file_blocks -= double_blocks;
-	final_file_blocks += 1 + double_blocks;
-
-	// Need 2rd indirection
-	if(file_blocks / double_blocks <= ADDR_PER_BLOCK)
-	{
-		//(1 + ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK + ADDR_PER_BLOCK*ADDR_PER_BLOCK*ADDR_PER_BLOCK)
-		int indirect_blocks = 1 + (file_blocks + double_blocks - 1) / double_blocks
-		                        + (file_blocks + ADDR_PER_BLOCK - 1) / ADDR_PER_BLOCK;
-		final_file_blocks += file_blocks + indirect_blocks;
-		return final_file_blocks;
-	}
-
-	return -1;
-}
-
 // adds a tree of entries to the filesystem from current dir
 static void
 add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
@@ -2879,6 +2895,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					break;
 				case S_IFDIR:
 					stats->ninodes++;
+					stats->nblocks++; // each directory uses at least 1 block
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
 					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, fs_timestamp, stats);
@@ -3949,27 +3966,98 @@ main(int argc, char **argv)
 		if(reserved_frac == -1)
 			reserved_frac = 1.0 * RESERVED_BLOCKS;
 
+		/* Add root directory block (always present) */
+		stats.nblocks++;
+		stats.ninodes++;
+
+		/* Add reserved inodes (EXT2_FIRST_INO - 1 = 10 reserved inodes) */
+		stats.ninodes += EXT2_FIRST_INO - 1;
+
 		if(nbblocks == -1)
 		{
 			/* On filesystems with 1k block size, the bootloader area uses a full
 			 * block. For 2048 and up, the superblock can be fitted into block 0.
 			 */
-			int first_block = (BLOCKSIZE == 1024);
-			/* bootloader block + superblock + data blocks */
-			nbblocks = 1 + first_block + stats.nblocks;
-			nbblocks += nbblocks * reserved_frac;
-		}
-		else
-			if(stats.nblocks > nbblocks)
+			uint32 first_block = (BLOCKSIZE == 1024);
+			uint32 nbgroups, gdsz, itblsz, overhead_per_group;
+			uint32 nbinodes_per_group;
+
+			/* Add reserved blocks as a fraction of data blocks */
+			unsigned long data_blocks = stats.nblocks;
+			data_blocks += (unsigned long)(data_blocks * reserved_frac);
+
+			/* lost+found directory: 1 inode + 16 data blocks (if reserved > 0)
+			 * Use calc_file_alloc_blocks to account for indirect block overhead.
+			 */
+			if(reserved_frac > 0)
 			{
-				unsigned long minimum_blocks = stats.nblocks + stats.nblocks * reserved_frac;
-				// fprintf(stderr, "number of blocks too low, increasing to %ld\n", minimum_blocks);
-				// nbblocks = minimum_blocks;
-				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
+				data_blocks += calc_file_alloc_blocks(16 * BLOCKSIZE);
+				stats.ninodes++;
 			}
 
+			/* Iteratively calculate total blocks including group overhead.
+			 * Group overhead depends on total block count (which determines
+			 * the number of groups), so we iterate until stable.
+			 */
+			nbblocks = first_block + data_blocks;
+			for(int iter = 0; iter < 20; iter++)
+			{
+				unsigned long prev_nbblocks = nbblocks;
+				nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
+				if(nbinodes == -1)
+					nbinodes_per_group = rndup((stats.ninodes + nbgroups - 1) / nbgroups,
+								   (BLOCKSIZE / sizeof(inode)));
+				else
+					nbinodes_per_group = rndup((nbinodes + nbgroups - 1) / nbgroups,
+								   (BLOCKSIZE / sizeof(inode)));
+				if(nbinodes_per_group < 16)
+					nbinodes_per_group = 16;
+				gdsz = rndup(nbgroups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE;
+				itblsz = nbinodes_per_group * sizeof(inode) / BLOCKSIZE;
+				overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
+
+				nbblocks = first_block + data_blocks + overhead_per_group * nbgroups;
+				if(nbblocks == prev_nbblocks)
+					break;
+			}
+		}
+		else
+		{
+			/* User specified block count — check it's sufficient */
+			uint32 first_block = (BLOCKSIZE == 1024);
+			uint32 nbgroups, gdsz, itblsz, overhead_per_group;
+			uint32 nbinodes_per_group;
+			unsigned long data_blocks = stats.nblocks;
+			unsigned long minimum_blocks;
+
+			/* lost+found */
+			if(reserved_frac > 0)
+			{
+				data_blocks += calc_file_alloc_blocks(16 * BLOCKSIZE);
+				stats.ninodes++;
+			}
+
+			data_blocks += (unsigned long)(data_blocks * reserved_frac);
+
+			nbgroups = (nbblocks - first_block + BLOCKS_PER_GROUP - 1) / BLOCKS_PER_GROUP;
+			if(nbinodes == -1)
+				nbinodes_per_group = rndup((stats.ninodes + nbgroups - 1) / nbgroups,
+							   (BLOCKSIZE / sizeof(inode)));
+			else
+				nbinodes_per_group = rndup((nbinodes + nbgroups - 1) / nbgroups,
+							   (BLOCKSIZE / sizeof(inode)));
+			if(nbinodes_per_group < 16)
+				nbinodes_per_group = 16;
+			gdsz = rndup(nbgroups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE;
+			itblsz = nbinodes_per_group * sizeof(inode) / BLOCKSIZE;
+			overhead_per_group = 3 + gdsz + itblsz;
+
+			minimum_blocks = first_block + data_blocks + overhead_per_group * nbgroups;
+			if(minimum_blocks > (unsigned long)nbblocks)
+				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
+		}
+
 		nbresrvd = nbblocks * reserved_frac;
-		stats.ninodes += EXT2_FIRST_INO - 1 + (nbresrvd ? 1 : 0);
 
 		if(nbinodes == -1)
 			nbinodes = stats.ninodes;
