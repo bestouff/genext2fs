@@ -33,9 +33,13 @@ calc_digest () {
 # dgen - Exercises the -d option of genext2fs.
 # Creates an image with a file of given size.
 dgen () {
+	gen_setup
+	dgen_raw $@
+}
+
+dgen_raw () {
 	blocks=$1; blocksz=$2; size=$3
 	echo Testing $blocks blocks of $blocksz bytes with file of size $size
-	gen_setup
 	cd $test_dir
 	if [ x$size = x0 ]; then
 		> file.$size
