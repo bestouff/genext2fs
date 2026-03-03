@@ -2882,7 +2882,8 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 	struct dirent **dents = NULL;
 	struct stat st;
 	char *lnk;
-	uint32 save_nod, numdirs, i;
+	uint32 save_nod;
+	int numdirs, i;
 	off_t filesize;
 
 	if((numdirs = scandir(".", &dents, NULL, alphasort)) == -1)

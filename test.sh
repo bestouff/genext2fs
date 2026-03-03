@@ -33,6 +33,10 @@ dtest () {
 }
 
 dtest_s () {
+	if ! command -v disorderfs >/dev/null 2>&1; then
+		echo "SKIP (disorderfs not found)"
+		return
+	fi
 	expected_digest=$1
 	shift
 	reversed=$1;
@@ -47,6 +51,7 @@ dtest_s () {
 	fusermount -u $test_dir
 	md5cmp $expected_digest
 	gen_cleanup
+	rm -rf $ROOTDIR
 }
 
 ftest () {
