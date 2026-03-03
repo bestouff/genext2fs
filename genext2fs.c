@@ -3701,7 +3701,7 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 		int pdir;
 		char *pdest;
 		uint32 nod = EXT2_ROOT_INO;
-		if((pdest = strchr(fslayers[i].path, ':')))
+		if((pdest = strrchr(fslayers[i].path, ':')))
 		{
 			*(pdest++) = 0;
 			if(fs && !(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
