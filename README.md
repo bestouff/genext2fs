@@ -115,7 +115,7 @@ Make files with holes.
 **-f, --faketime**
 
 Use a timestamp of 0 for inode and filesystem creation, instead of the
-present. Useful for testing.
+present. Useful for testing. See also `SOURCE_DATE_EPOCH` below.
 
 **-q, --squash**
 
@@ -131,6 +131,11 @@ owned by root:root.
 Squash permissions of inodes added using the -d option. Analogous to
 `umask 077`.
 
+**-X, --xattrs**
+
+Copy extended attributes from source files into the filesystem image.
+By default, extended attributes are not copied.
+
 **-v, --verbose**
 
 Print resulting filesystem structure.
@@ -142,6 +147,15 @@ Print genext2fs version.
 **-h, --help**
 
 Display help.
+
+ENVIRONMENT
+-----------
+
+**SOURCE_DATE_EPOCH**
+
+Standardized date for reproducible builds. If set, filesystem timestamps
+will use this value instead of the current time. See
+https://reproducible-builds.org/docs/source-date-epoch/ for more information.
 
 EXAMPLES
 --------
@@ -166,6 +180,8 @@ where name is the file name and type can be one of:
               c    Character special device file
               b    Block special device file
               p    Fifo (named pipe)
+              l    Symbolic link
+              s    Socket
 
 uid is the user id for the target file, gid is the group id for the
 target file. The rest of the entries (major, minor, etc) apply only to
