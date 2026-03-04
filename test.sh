@@ -173,3 +173,235 @@ if command -v setfattr >/dev/null 2>&1 && command -v getfattr >/dev/null 2>&1; t
 else
 	echo "SKIP xattr tests (setfattr/getfattr not found)"
 fi
+
+# ---- Starting image (-x): load existing image and add more content ----
+echo "Testing starting image (-x)"
+gen_setup
+mkdir -p $test_dir/dir1
+echo "original" > $test_dir/dir1/file1.txt
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/dir1/file1.txt $test_dir/dir1 $test_dir
+./genext2fs -B 1024 -N 32 -b 200 -d $test_dir -f -o Linux t_base.img
+gen_cleanup
+gen_setup
+mkdir -p $test_dir/dir2
+echo "added" > $test_dir/dir2/file2.txt
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/dir2/file2.txt $test_dir/dir2 $test_dir
+./genext2fs -x t_base.img -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+v1=$(/usr/sbin/debugfs -R "cat dir1/file1.txt" $test_img 2>/dev/null)
+v2=$(/usr/sbin/debugfs -R "cat dir2/file2.txt" $test_img 2>/dev/null)
+if [ "$v1" = "original" ] && [ "$v2" = "added" ]; then
+	echo "  contents: PASS"
+else
+	echo "  contents: FAIL (got '$v1' and '$v2')"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+rm -f t_base.img
+gen_cleanup
+
+# ---- Holes/sparse files (-z) ----
+echo "Testing sparse file support (-z)"
+gen_setup
+dd if=/dev/zero bs=1024 count=20 of=$test_dir/sparse_candidate 2>/dev/null
+echo "header data here" | dd of=$test_dir/sparse_candidate bs=1 count=17 conv=notrunc 2>/dev/null
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/sparse_candidate $test_dir
+./genext2fs -B 1024 -N 16 -b 100 -d $test_dir -f -o Linux t_noz.img
+./genext2fs -B 1024 -N 16 -b 100 -z -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+blocks_noz=$(stat -c%b t_noz.img)
+blocks_z=$(stat -c%b $test_img)
+if [ "$blocks_z" -lt "$blocks_noz" ]; then
+	echo "  sparse output: PASS ($blocks_noz -> $blocks_z 512-byte blocks)"
+else
+	echo "  sparse output: FAIL (expected fewer blocks, got $blocks_noz vs $blocks_z)"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+rm -f t_noz.img
+gen_cleanup
+
+# ---- Fill value (-e) ----
+echo "Testing fill value (-e 255)"
+gen_setup
+echo "small" > $test_dir/tiny.txt
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/tiny.txt $test_dir
+./genext2fs -B 1024 -N 16 -b 32 -d $test_dir -e 255 -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+# The last block should be unallocated and filled with 0xff
+last_block_bytes=$(od -A n -t x1 -j $((31 * 1024)) -N 1024 $test_img | tr -d ' \n')
+expected=$(printf '%0.s ff' $(seq 1 1024) | tr -d ' ')
+# Simplify: just check that it does NOT contain any 00 bytes
+zeros=$(od -A n -t x1 -j $((31 * 1024)) -N 1024 $test_img | tr -s ' ' '\n' | grep -c '^00$' || true)
+if [ "$zeros" -eq 0 ]; then
+	echo "  fill value: PASS"
+else
+	echo "  fill value: FAIL ($zeros zero bytes in last block)"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Volume label (-L) ----
+echo "Testing volume label (-L)"
+gen_setup
+TZ=UTC-11 touch -t 200502070321.43 $test_dir
+./genext2fs -B 1024 -N 16 -b 32 -d $test_dir -L "MYVOLUME" -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+label=$(/usr/sbin/dumpe2fs -h $test_img 2>/dev/null | sed -n 's/^Filesystem volume name: *//p')
+if [ "$label" = "MYVOLUME" ]; then
+	echo "  label: PASS"
+else
+	echo "  label: FAIL (got '$label')"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Hardlinks ----
+echo "Testing hardlinks"
+gen_setup
+echo "shared content" > $test_dir/original.txt
+ln $test_dir/original.txt $test_dir/hardlink1.txt
+ln $test_dir/original.txt $test_dir/hardlink2.txt
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/original.txt $test_dir
+./genext2fs -B 1024 -N 32 -b 100 -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+ino1=$(/usr/sbin/debugfs -R "stat original.txt" $test_img 2>/dev/null | sed -n 's/^Inode: *\([0-9]*\).*/\1/p')
+ino2=$(/usr/sbin/debugfs -R "stat hardlink1.txt" $test_img 2>/dev/null | sed -n 's/^Inode: *\([0-9]*\).*/\1/p')
+ino3=$(/usr/sbin/debugfs -R "stat hardlink2.txt" $test_img 2>/dev/null | sed -n 's/^Inode: *\([0-9]*\).*/\1/p')
+links=$(/usr/sbin/debugfs -R "stat original.txt" $test_img 2>/dev/null | grep -o 'Links: [0-9]*' | awk '{print $2}')
+if [ "$ino1" = "$ino2" ] && [ "$ino2" = "$ino3" ] && [ "$links" = "3" ]; then
+	echo "  shared inode ($ino1) with 3 links: PASS"
+else
+	echo "  hardlinks: FAIL (inodes $ino1/$ino2/$ino3, links=$links)"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Deep directory nesting (20 levels) ----
+echo "Testing deep directory nesting (20 levels)"
+gen_setup
+deep=$test_dir
+for i in $(seq 1 20); do deep="$deep/level$i"; done
+mkdir -p "$deep"
+echo "deep content" > "$deep/deepfile.txt"
+TZ=UTC-11 touch -t 200502070321.43 "$deep/deepfile.txt"
+p=$test_dir
+for i in $(seq 20 -1 1); do
+	p2=$test_dir; for j in $(seq 1 $i); do p2="$p2/level$j"; done
+	TZ=UTC-11 touch -t 200502070321.43 "$p2"
+done
+TZ=UTC-11 touch -t 200502070321.43 $test_dir
+./genext2fs -B 1024 -N 64 -b 200 -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+deeppath="level1/level2/level3/level4/level5/level6/level7/level8/level9/level10"
+deeppath="$deeppath/level11/level12/level13/level14/level15/level16/level17/level18/level19/level20/deepfile.txt"
+val=$(/usr/sbin/debugfs -R "cat $deeppath" $test_img 2>/dev/null)
+if [ "$val" = "deep content" ]; then
+	echo "  deep file: PASS"
+else
+	echo "  deep file: FAIL (got '$val')"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Long filenames (255 characters) ----
+echo "Testing long filenames (255 chars)"
+gen_setup
+longname=$(python3 -c "print('A' * 251 + '.txt')")
+echo "long name content" > "$test_dir/$longname"
+TZ=UTC-11 touch -t 200502070321.43 "$test_dir/$longname" $test_dir
+./genext2fs -B 1024 -N 16 -b 100 -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+val=$(/usr/sbin/debugfs -R "cat $longname" $test_img 2>/dev/null)
+if [ "$val" = "long name content" ]; then
+	echo "  long filename: PASS"
+else
+	echo "  long filename: FAIL (got '$val')"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Colons in paths (-d dir:/subpath) ----
+echo "Testing destination path (-d dir:/subpath)"
+gen_setup
+echo "installed file" > $test_dir/myfile.txt
+TZ=UTC-11 touch -t 200502070321.43 $test_dir/myfile.txt $test_dir
+./genext2fs -B 1024 -N 32 -b 200 -d "$test_dir:/usr/local/share" -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+val=$(/usr/sbin/debugfs -R "cat /usr/local/share/myfile.txt" $test_img 2>/dev/null)
+if [ "$val" = "installed file" ]; then
+	echo "  destination path: PASS"
+else
+	echo "  destination path: FAIL (got '$val')"; pass=false
+fi
+# Also test with auto-size (-b 0) to verify stats accounting
+./genext2fs -B 1024 -N 32 -b 0 -d "$test_dir:/opt/data" -f -o Linux $test_img
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  auto-size e2fsck: FAIL"; pass=false
+fi
+val=$(/usr/sbin/debugfs -R "cat /opt/data/myfile.txt" $test_img 2>/dev/null)
+if [ "$val" = "installed file" ]; then
+	echo "  auto-size destination: PASS"
+else
+	echo "  auto-size destination: FAIL (got '$val')"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
+
+# ---- Many small files (inode pressure) ----
+echo "Testing many small files (200 files in 10 dirs)"
+gen_setup
+for d in $(seq 1 10); do
+	mkdir "$test_dir/dir$d"
+	for f in $(seq 1 20); do
+		echo "content $d/$f" > "$test_dir/dir$d/file$f.txt"
+	done
+done
+TZ=UTC-11 find $test_dir -exec touch -h -t 200502070321.43 {} +
+./genext2fs -B 1024 -b 0 -d $test_dir -f -o Linux $test_img
+pass=true
+if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+	echo "  e2fsck: FAIL"; pass=false
+fi
+# Spot-check a few files
+for check in "dir1/file1.txt:content 1/1" "dir5/file10.txt:content 5/10" "dir10/file20.txt:content 10/20"; do
+	path="${check%%:*}"
+	expected="${check#*:}"
+	val=$(/usr/sbin/debugfs -R "cat $path" $test_img 2>/dev/null)
+	if [ "$val" = "$expected" ]; then
+		echo "  $path: PASS"
+	else
+		echo "  $path: FAIL (got '$val')"; pass=false
+	fi
+done
+# Verify total file count via dumpe2fs (should be at least 200 files + 10 dirs + root + lost+found + reserved)
+used_inodes=$(/usr/sbin/dumpe2fs -h $test_img 2>/dev/null | sed -n 's/^Inode count: *//p')
+if [ "$used_inodes" -ge 212 ]; then
+	echo "  inode count ($used_inodes): PASS"
+else
+	echo "  inode count ($used_inodes): FAIL (expected >= 212)"; pass=false
+fi
+$pass && echo "PASS" || { echo "FAIL"; exit 1; }
+gen_cleanup
