@@ -360,6 +360,23 @@ static uint32 blocksize = 1024;
 #define GRP_BBM_OFFSET(fs,blk) \
 	( (blk) - GRP_GROUP_OF_BLOCK((fs),(blk))*(fs)->sb->s_blocks_per_group )
 
+// Does this block group have a superblock+GDT backup?
+// With sparse_super: group 0, 1, and powers of 3, 5, 7.
+static inline int
+group_has_super(uint32 group)
+{
+	uint32 g;
+	if(group <= 1)
+		return 1;
+	for(g = 3; g <= group; g *= 3)
+		if(g == group) return 1;
+	for(g = 5; g <= group; g *= 5)
+		if(g == group) return 1;
+	for(g = 7; g <= group; g *= 7)
+		if(g == group) return 1;
+	return 0;
+}
+
 
 // the GNU C library has a wonderful scanf("%as", string) which will
 // allocate the string with the right size, good to avoid buffer
@@ -572,6 +589,7 @@ is_blk_empty(uint8 *b)
 
 #define EXT2_GOOD_OLD_FIRST_INO	11
 #define EXT2_GOOD_OLD_INODE_SIZE 128
+#define EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT2_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 
 #define groupdescriptor_decl \
@@ -3129,9 +3147,9 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	filesystem *fs;
 	dirwalker dw;
 	uint32 nod, first_block;
-	uint32 nbgroups,nbinodes_per_group,overhead_per_group,free_blocks,
-		free_blocks_per_group,nbblocks_per_group,min_nbgroups;
-	uint32 gdsz,itblsz,bbmpos,ibmpos,itblpos;
+	uint32 nbgroups,nbinodes_per_group,free_blocks,
+		nbblocks_per_group,min_nbgroups;
+	uint32 gdsz,itblsz;
 	uint32 j;
 	uint8 *bbm,*ibm;
 	inode *itab0;
@@ -3171,9 +3189,21 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 
 	gdsz = rndup(nbgroups*sizeof(groupdescriptor),BLOCKSIZE)/BLOCKSIZE;
 	itblsz = nbinodes_per_group * sizeof(inode)/BLOCKSIZE;
-	overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
-	free_blocks = nbblocks - overhead_per_group*nbgroups - first_block;
-	free_blocks_per_group = nbblocks_per_group - overhead_per_group;
+
+	/* With sparse_super, only certain groups have sb+gdt backups.
+	 * Compute total overhead by summing per-group overhead.
+	 */
+	{
+		uint32 total_overhead = 0;
+		for(i = 0; i < nbgroups; i++)
+		{
+			uint32 grp_overhead = 2 /*bbm,ibm*/ + itblsz;
+			if(group_has_super(i))
+				grp_overhead += 1 /*sb*/ + gdsz;
+			total_overhead += grp_overhead;
+		}
+		free_blocks = nbblocks - total_overhead - first_block;
+	}
 
 	fs = alloc_fs(swapit, fname, nbblocks, NULL);
 	fs->sb = calloc(1, SUPERBLOCK_SIZE);
@@ -3197,13 +3227,34 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	fs->sb->s_lastcheck = fs_timestamp;
 	fs->sb->s_creator_os = creator_os;
 
+	// set rev1 fields for sparse_super support
+	fs->sb->s_rev_level = 1;
+	fs->sb->s_first_ino = EXT2_GOOD_OLD_FIRST_INO;
+	fs->sb->s_inode_size = EXT2_GOOD_OLD_INODE_SIZE;
+	fs->sb->s_feature_ro_compat = EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER;
+
 	set_file_size(fs);
 
 	// set up groupdescriptors
-	for(i=0, bbmpos=first_block+1+gdsz, ibmpos=bbmpos+1, itblpos=ibmpos+1;
-		i<nbgroups;
-		i++, bbmpos+=nbblocks_per_group, ibmpos+=nbblocks_per_group, itblpos+=nbblocks_per_group)
+	for(i = 0; i < nbgroups; i++)
 	{
+		uint32 group_start = first_block + i * nbblocks_per_group;
+		uint32 has_super = group_has_super(i);
+		uint32 grp_overhead = 2 /*bbm,ibm*/ + itblsz;
+		uint32 bbmpos, ibmpos, itblpos;
+		uint32 free_blocks_per_group;
+
+		if(has_super)
+		{
+			bbmpos = group_start + 1 + gdsz;
+			grp_overhead += 1 + gdsz;
+		}
+		else
+			bbmpos = group_start;
+		ibmpos = bbmpos + 1;
+		itblpos = ibmpos + 1;
+		free_blocks_per_group = nbblocks_per_group - grp_overhead;
+
 		gd = get_gd(fs, i, &gi);
 
 		if(free_blocks > free_blocks_per_group) {
@@ -3228,15 +3279,19 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	/* Mark non-filesystem blocks and inodes as allocated */
 	/* Mark system blocks and inodes as allocated         */
 	for(i = 0; i<nbgroups;i++) {
+		uint32 grp_overhead = 2 + itblsz;
+		if(group_has_super(i))
+			grp_overhead += 1 + gdsz;
+
 		/* Block bitmap */
 		gd = get_gd(fs, i, &gi);
 		bbm = GRP_GET_GROUP_BBM(fs, gd, &bi);
 		//non-filesystem blocks
 		for(j = gd->bg_free_blocks_count
-		        + overhead_per_group + 1; j <= BLOCKSIZE * 8; j++)
+		        + grp_overhead + 1; j <= BLOCKSIZE * 8; j++)
 			allocate(bbm, j); 
 		//system blocks
-		for(j = 1; j <= overhead_per_group; j++)
+		for(j = 1; j <= grp_overhead; j++)
 			allocate(bbm, j); 
 		GRP_PUT_GROUP_BBM(bi);
 
@@ -3351,7 +3406,8 @@ load_fs(FILE *fh, int swapit, char *fname)
 		if (fs->sb->s_feature_incompat)
 			error_msg_and_die("Unsupported incompat features");
 		if (fs->sb->s_feature_ro_compat
-		    & ~EXT2_FEATURE_RO_COMPAT_LARGE_FILE)
+		    & ~(EXT2_FEATURE_RO_COMPAT_LARGE_FILE
+			| EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER))
 			error_msg_and_die("Unsupported ro compat features");
 	}
 
@@ -3672,6 +3728,8 @@ print_fs(filesystem *fs)
 static void
 finish_fs(filesystem *fs)
 {
+	uint32 i, nbgroups, gdsz;
+
 	if (cache_flush(&fs->inodes))
 		error_msg_and_die("entry mismatch on inode cache flush");
 	if (cache_flush(&fs->blkmaps))
@@ -3682,12 +3740,71 @@ finish_fs(filesystem *fs)
 		error_msg_and_die("entry mismatch on block cache flush");
 	if(fs->swapit)
 		swap_sb(fs->sb);
+	// write primary superblock
 	if (fseek(fs->f, SUPERBLOCK_OFFSET, SEEK_SET))
 		perror_msg_and_die("fseek");
 	if(fwrite(fs->sb, SUPERBLOCK_SIZE, 1, fs->f) != 1)
 		perror_msg_and_die("output filesystem superblock");
+
+	// write backup superblock+GDT copies for sparse_super groups
 	if(fs->swapit)
 		swap_sb(fs->sb);
+	if(fs->sb->s_feature_ro_compat & EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER)
+	{
+		uint32 blocks_per_group = fs->sb->s_blocks_per_group;
+		uint32 first_block = fs->sb->s_first_data_block;
+		uint8 *gdt_buf;
+
+		nbgroups = GRP_NBGROUPS(fs);
+		gdsz = rndup(nbgroups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE;
+
+		// read the primary GDT from disk
+		gdt_buf = malloc(gdsz * BLOCKSIZE);
+		if(!gdt_buf)
+			error_msg_and_die("finish_fs: out of memory");
+		if(fseek(fs->f, GDS_START * BLOCKSIZE, SEEK_SET))
+			perror_msg_and_die("fseek gdt read");
+		if(fread(gdt_buf, BLOCKSIZE, gdsz, fs->f) != gdsz)
+			perror_msg_and_die("fread gdt");
+
+		for(i = 1; i < nbgroups; i++)
+		{
+			uint32 group_start;
+			off_t sb_offset;
+
+			if(!group_has_super(i))
+				continue;
+
+			group_start = first_block + i * blocks_per_group;
+			sb_offset = (off_t)group_start * BLOCKSIZE;
+
+			// write backup superblock with correct block_group_nr
+			fs->sb->s_block_group_nr = i;
+			if(fs->swapit)
+				swap_sb(fs->sb);
+			if(fseek(fs->f, sb_offset, SEEK_SET))
+				perror_msg_and_die("fseek backup sb");
+			if(fwrite(fs->sb, SUPERBLOCK_SIZE, 1, fs->f) != 1)
+				perror_msg_and_die("write backup superblock");
+			if(fs->swapit)
+				swap_sb(fs->sb);
+
+			// write backup GDT
+			if(fseek(fs->f, sb_offset + BLOCKSIZE, SEEK_SET))
+				perror_msg_and_die("fseek backup gdt");
+			if(fwrite(gdt_buf, BLOCKSIZE, gdsz, fs->f) != gdsz)
+				perror_msg_and_die("write backup gdt");
+		}
+		free(gdt_buf);
+
+		// restore primary superblock's block_group_nr
+		fs->sb->s_block_group_nr = 0;
+	}
+	else
+	{
+		if(fs->swapit)
+			swap_sb(fs->sb);
+	}
 }
 
 static void
@@ -4013,7 +4130,7 @@ main(int argc, char **argv)
 			 * block. For 2048 and up, the superblock can be fitted into block 0.
 			 */
 			uint32 first_block = (BLOCKSIZE == 1024);
-			uint32 nbgroups, gdsz, itblsz, overhead_per_group;
+			uint32 nbgroups, gdsz, itblsz;
 			uint32 nbinodes_per_group;
 
 			/* Add reserved blocks as a fraction of data blocks */
@@ -4048,9 +4165,18 @@ main(int argc, char **argv)
 					nbinodes_per_group = 16;
 				gdsz = rndup(nbgroups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE;
 				itblsz = nbinodes_per_group * sizeof(inode) / BLOCKSIZE;
-				overhead_per_group = 3 /*sb,bbm,ibm*/ + gdsz + itblsz;
 
-				nbblocks = first_block + data_blocks + overhead_per_group * nbgroups;
+				{
+					uint32 total_overhead = 0;
+					uint32 g;
+					for(g = 0; g < nbgroups; g++)
+					{
+						total_overhead += 2 /*bbm,ibm*/ + itblsz;
+						if(group_has_super(g))
+							total_overhead += 1 /*sb*/ + gdsz;
+					}
+					nbblocks = first_block + data_blocks + total_overhead;
+				}
 				if(nbblocks == prev_nbblocks)
 					break;
 			}
@@ -4059,7 +4185,7 @@ main(int argc, char **argv)
 		{
 			/* User specified block count — check it's sufficient */
 			uint32 first_block = (BLOCKSIZE == 1024);
-			uint32 nbgroups, gdsz, itblsz, overhead_per_group;
+			uint32 nbgroups, gdsz, itblsz;
 			uint32 nbinodes_per_group;
 			unsigned long data_blocks = stats.nblocks;
 			unsigned long minimum_blocks;
@@ -4084,9 +4210,18 @@ main(int argc, char **argv)
 				nbinodes_per_group = 16;
 			gdsz = rndup(nbgroups * sizeof(groupdescriptor), BLOCKSIZE) / BLOCKSIZE;
 			itblsz = nbinodes_per_group * sizeof(inode) / BLOCKSIZE;
-			overhead_per_group = 3 + gdsz + itblsz;
 
-			minimum_blocks = first_block + data_blocks + overhead_per_group * nbgroups;
+			{
+				uint32 total_overhead = 0;
+				uint32 g;
+				for(g = 0; g < nbgroups; g++)
+				{
+					total_overhead += 2 /*bbm,ibm*/ + itblsz;
+					if(group_has_super(g))
+						total_overhead += 1 /*sb*/ + gdsz;
+				}
+				minimum_blocks = first_block + data_blocks + total_overhead;
+			}
 			if(minimum_blocks > (unsigned long)nbblocks)
 				error_msg_and_die("number of blocks too low. Need at least %lu.", minimum_blocks);
 		}
