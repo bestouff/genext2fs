@@ -129,7 +129,7 @@ if command -v setfattr >/dev/null 2>&1 && command -v getfattr >/dev/null 2>&1; t
 	setfattr -n user.deep -v "nested_val" subdir/nested
 	TZ=UTC-11 touch -t 200502070321.43 testfile1 testfile2 subdir/nested subdir .
 	cd ..
-	./genext2fs -B 1024 -N 32 -b 300 -d $test_dir -f -o Linux $test_img
+	./genext2fs -X -B 1024 -N 32 -b 300 -d $test_dir -f -o Linux $test_img
 	# e2fsck must pass cleanly
 	if /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
 		echo "  e2fsck: PASS"
@@ -162,7 +162,7 @@ if command -v setfattr >/dev/null 2>&1 && command -v getfattr >/dev/null 2>&1; t
 	done
 	TZ=UTC-11 touch -t 200502070321.43 file* .
 	cd ..
-	./genext2fs -B 1024 -N 40 -b 0 -d $test_dir -f -o Linux $test_img
+	./genext2fs -X -B 1024 -N 40 -b 0 -d $test_dir -f -o Linux $test_img
 	if /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
 		echo "  auto-size e2fsck: PASS"
 	else

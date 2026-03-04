@@ -3258,7 +3258,7 @@ add2fs_from_file(filesystem *fs, uint32 this_nod, FILE * fh, uint32 fs_timestamp
 
 // adds a tree of entries to the filesystem from current dir
 static void
-add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_perms, int copy_xattrs, uint32 fs_timestamp, struct stats *stats)
 {
 	uint32 nod;
 	uint32 uid, gid, mode, ctime, mtime;
@@ -3297,7 +3297,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
 					stats->ninodes++;
 #if HAVE_LLISTXATTR
-					if(llistxattr(dent->d_name, NULL, 0) > 0)
+					if(copy_xattrs && llistxattr(dent->d_name, NULL, 0) > 0)
 						stats->nblocks++;
 #endif
 					break;
@@ -3315,7 +3315,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				case S_IFSOCK:
 					stats->ninodes++;
 #if HAVE_LLISTXATTR
-					if(llistxattr(dent->d_name, NULL, 0) > 0)
+					if(copy_xattrs && llistxattr(dent->d_name, NULL, 0) > 0)
 						stats->nblocks++;
 #endif
 					break;
@@ -3323,12 +3323,12 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					stats->ninodes++;
 					stats->nblocks++; // each directory uses at least 1 block
 #if HAVE_LLISTXATTR
-					if(llistxattr(dent->d_name, NULL, 0) > 0)
+					if(copy_xattrs && llistxattr(dent->d_name, NULL, 0) > 0)
 						stats->nblocks++;
 #endif
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
-					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, fs_timestamp, stats);
+					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, copy_xattrs, fs_timestamp, stats);
 					if (chdir("..") == -1)
 						perror_msg_and_die("..");
 
@@ -3344,7 +3344,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				if(S_ISDIR(st.st_mode)) {
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, copy_xattrs, fs_timestamp, stats);
 					if (chdir("..") == -1)
 						perror_msg_and_die("..");
 				}
@@ -3403,7 +3403,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					nod = mkdir_fs(fs, this_nod, name, mode, uid, gid, ctime, mtime);
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(name);
-					add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+					add2fs_from_dir(fs, nod, squash_uids, squash_perms, copy_xattrs, fs_timestamp, stats);
 					if (chdir("..") == -1)
 						perror_msg_and_die("..");
 					break;
@@ -3425,7 +3425,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 			}
 #if HAVE_LLISTXATTR
 			// read and set xattrs from host file
-			if (nod) {
+			if (copy_xattrs && nod) {
 				ssize_t xlist_size = llistxattr(dent->d_name, NULL, 0);
 				if (xlist_size > 0) {
 					char *xlist = malloc(xlist_size);
@@ -4260,7 +4260,7 @@ finish_fs(filesystem *fs)
 }
 
 static void
-populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_uids, int squash_perms, uint32 fs_timestamp, struct stats *stats)
+populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_uids, int squash_perms, int copy_xattrs, uint32 fs_timestamp, struct stats *stats)
 {
 	int i;
 	for(i = 0; i < nlayers; i++)
@@ -4321,7 +4321,7 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 					perror_msg_and_die(".");
 				if(chdir(fslayers[i].path) < 0)
 					perror_msg_and_die(fslayers[i].path);
-				add2fs_from_dir(fs, nod, squash_uids, squash_perms, fs_timestamp, stats);
+				add2fs_from_dir(fs, nod, squash_uids, squash_perms, copy_xattrs, fs_timestamp, stats);
 				if(fchdir(pdir) < 0)
 					perror_msg_and_die("fchdir");
 				if(close(pdir) < 0)
@@ -4374,6 +4374,7 @@ showhelp(void)
 	"  -q, --squash                      Same as \"-U -P\".\n"
 	"  -U, --squash-uids                 Squash owners making all files be owned by root.\n"
 	"  -P, --squash-perms                Squash permissions on all files.\n"
+	"  -X, --xattrs                      Copy extended attributes from source files.\n"
 	"  -h, --help\n"
 	"  -V, --version\n"
 	"  -v, --verbose\n\n"
@@ -4427,6 +4428,7 @@ main(int argc, char **argv)
 	int emptyval = 0;
 	int squash_uids = 0;
 	int squash_perms = 0;
+	int copy_xattrs = 0;
 	uint16 endian = 1;
 	int bigendian = !*(char*)&endian;
 	char *volumelabel = NULL;
@@ -4455,6 +4457,7 @@ main(int argc, char **argv)
 	  { "squash",		no_argument,		NULL, 'q' },
 	  { "squash-uids",	no_argument,		NULL, 'U' },
 	  { "squash-perms",	no_argument,		NULL, 'P' },
+	  { "xattrs",		no_argument,		NULL, 'X' },
 	  { "help",		no_argument,		NULL, 'h' },
 	  { "version",		no_argument,		NULL, 'V' },
 	  { "verbose",		no_argument,		NULL, 'v' },
@@ -4463,11 +4466,11 @@ main(int argc, char **argv)
 
 	app_name = argv[0];
 
-	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv", longopts, NULL)) != EOF) {
+	while((c = getopt_long(argc, argv, "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPXhVv", longopts, NULL)) != EOF) {
 #else
 	app_name = argv[0];
 
-	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPhVv")) != EOF) {
+	while((c = getopt(argc, argv,      "x:d:D:a:B:b:i:N:L:m:o:g:e:zfqUPXhVv")) != EOF) {
 #endif /* HAVE_GETOPT_LONG */
 		switch(c)
 		{
@@ -4529,6 +4532,9 @@ main(int argc, char **argv)
 			case 'P':
 				squash_perms = 1;
 				break;
+			case 'X':
+				copy_xattrs = 1;
+				break;
 			case 'h':
 				showhelp();
 				exit(0);
@@ -4581,7 +4587,7 @@ main(int argc, char **argv)
 		stats.ninodes = 0;
 		stats.nblocks = 0;
 
-		populate_fs(NULL, layers, nlayers, squash_uids, squash_perms, fs_timestamp, &stats);
+		populate_fs(NULL, layers, nlayers, squash_uids, squash_perms, copy_xattrs, fs_timestamp, &stats);
 
 		if(reserved_frac == -1)
 			reserved_frac = 1.0 * RESERVED_BLOCKS;
@@ -4727,7 +4733,7 @@ main(int argc, char **argv)
 		strncpy((char *)fs->sb->s_volume_name, volumelabel,
 			sizeof(fs->sb->s_volume_name));
 	
-	populate_fs(fs, layers, nlayers, squash_uids, squash_perms, fs_timestamp, NULL);
+	populate_fs(fs, layers, nlayers, squash_uids, squash_perms, copy_xattrs, fs_timestamp, NULL);
 
 	if(emptyval) {
 		uint32 b;
