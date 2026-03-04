@@ -768,6 +768,9 @@ typedef struct
 	listcache gds;
 	listcache inodes;
 	listcache blkmaps;
+
+	uint32 *blk_alloc_hint;  // per-group byte offset hint for block bitmap scan
+	uint32 *ino_alloc_hint;  // per-group byte offset hint for inode bitmap scan
 } filesystem;
 
 // now the endianness swap
@@ -1455,25 +1458,28 @@ dir_set_name(dirwalker *dw, const char *name, int nlen)
 
 // allocate a given block/inode in the bitmap
 // allocate first free if item == 0
+// hint (if non-NULL) points to the byte offset to start scanning from,
+// and is updated on success for amortized O(1) sequential allocation
 static uint32
-allocate(block b, uint32 item)
+allocate(block b, uint32 item, uint32 *hint)
 {
 	if(!item)
 	{
 		uint32 i;
-		uint8 bits;
-		for(i = 0; i < BLOCKSIZE; i++)
-			if((bits = b[i]) != (uint8)-1)
+		uint32 start = hint ? *hint : 0;
+		for(i = start; i < BLOCKSIZE; i++)
+		{
+			uint8 bits = b[i];
+			if(bits != (uint8)-1)
 			{
-				int j;
-				for(j = 0; j < 8; j++)
-					if(!(bits & (1 << j)))
-						break;
-				item = i * 8 + j + 1;
+				item = i * 8 + __builtin_ctz(~bits) + 1;
 				break;
 			}
+		}
 		if(i == BLOCKSIZE)
 			return 0;
+		if(hint)
+			*hint = i;
 	}
 	b[(item-1) / 8] |= (1 << ((item-1) % 8));
 	return item;
@@ -1499,14 +1505,22 @@ alloc_blk(filesystem *fs, uint32 nod)
 	grp = GRP_GROUP_OF_INODE(fs,nod);
 	nbgroups = GRP_NBGROUPS(fs);
 	gd = get_gd(fs, grp, &gi);
-	bk = allocate(GRP_GET_GROUP_BBM(fs, gd, &bi), 0);
-	GRP_PUT_GROUP_BBM(bi);
+	if (gd->bg_free_blocks_count)
+		bk = allocate(GRP_GET_GROUP_BBM(fs, gd, &bi), 0,
+			      &fs->blk_alloc_hint[grp]);
+	else
+		bk = 0;
+	if (bk)
+		GRP_PUT_GROUP_BBM(bi);
 	put_gd(gi);
 	if (!bk) {
 		for (grp=0; grp<nbgroups && !bk; grp++) {
 			gd = get_gd(fs, grp, &gi);
-			bk = allocate(GRP_GET_GROUP_BBM(fs, gd, &bi), 0);
-			GRP_PUT_GROUP_BBM(bi);
+			if (gd->bg_free_blocks_count)
+				bk = allocate(GRP_GET_GROUP_BBM(fs, gd, &bi), 0,
+					      &fs->blk_alloc_hint[grp]);
+			if (bk)
+				GRP_PUT_GROUP_BBM(bi);
 			put_gd(gi);
 		}
 		grp--;
@@ -1575,7 +1589,8 @@ alloc_nod(filesystem *fs)
 		} else
 			put_gd(gi);
 	}
-	if (!(nod = allocate(GRP_GET_GROUP_IBM(fs, bestgd, &bi), 0)))
+	if (!(nod = allocate(GRP_GET_GROUP_IBM(fs, bestgd, &bi), 0,
+			     &fs->ino_alloc_hint[best_group])))
 		error_msg_and_die("couldn't allocate an inode (no free inode)");
 	GRP_PUT_GROUP_IBM(bi);
 	if(!(bestgd->bg_free_inodes_count--))
@@ -3598,6 +3613,12 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 	if (!fs->sb)
 		error_msg_and_die("error allocating header memory");
 
+	// allocation hint arrays for O(1) amortized block/inode allocation
+	fs->blk_alloc_hint = calloc(nbgroups, sizeof(uint32));
+	fs->ino_alloc_hint = calloc(nbgroups, sizeof(uint32));
+	if (!fs->blk_alloc_hint || !fs->ino_alloc_hint)
+		error_msg_and_die("error allocating allocation hint arrays");
+
 	// create the superblock for an empty filesystem
 	fs->sb->s_inodes_count = nbinodes_per_group * nbgroups;
 	fs->sb->s_blocks_count = nbblocks;
@@ -3677,22 +3698,22 @@ init_fs(int nbblocks, int nbinodes, int nbresrvd, int holes,
 		//non-filesystem blocks
 		for(j = gd->bg_free_blocks_count
 		        + grp_overhead + 1; j <= BLOCKSIZE * 8; j++)
-			allocate(bbm, j); 
+			allocate(bbm, j, NULL); 
 		//system blocks
 		for(j = 1; j <= grp_overhead; j++)
-			allocate(bbm, j); 
+			allocate(bbm, j, NULL); 
 		GRP_PUT_GROUP_BBM(bi);
 
 		/* Inode bitmap */
 		ibm = GRP_GET_GROUP_IBM(fs, gd, &bi);
 		//non-filesystem inodes
 		for(j = fs->sb->s_inodes_per_group+1; j <= BLOCKSIZE * 8; j++)
-			allocate(ibm, j);
+			allocate(ibm, j, NULL);
 
 		//system inodes
 		if(i == 0)
 			for(j = 1; j < EXT2_FIRST_INO; j++)
-				allocate(ibm, j);
+				allocate(ibm, j, NULL);
 		GRP_PUT_GROUP_IBM(bi);
 		put_gd(gi);
 	}
@@ -3801,6 +3822,16 @@ load_fs(FILE *fh, int swapit, char *fname)
 	}
 
 	set_file_size(fs);
+
+	// allocation hint arrays for O(1) amortized block/inode allocation
+	{
+		uint32 nbgroups = GRP_NBGROUPS(fs);
+		fs->blk_alloc_hint = calloc(nbgroups, sizeof(uint32));
+		fs->ino_alloc_hint = calloc(nbgroups, sizeof(uint32));
+		if (!fs->blk_alloc_hint || !fs->ino_alloc_hint)
+			error_msg_and_die("error allocating allocation hint arrays");
+	}
+
 	return fs;
 }
 
@@ -3808,6 +3839,8 @@ static void
 free_fs(filesystem *fs)
 {
 	free(fs->hdlinks.hdl);
+	free(fs->blk_alloc_hint);
+	free(fs->ino_alloc_hint);
 	fclose(fs->f);
 	free(fs->sb);
 	free(fs);
