@@ -2155,6 +2155,36 @@ mkdir_fs(filesystem *fs, uint32 parent_nod, const char *name, uint32 mode,
 	return mknod_fs(fs, parent_nod, name, mode|FM_IFDIR, uid, gid, 0, 0, ctime, mtime);
 }
 
+// mkdir -p: create all intermediate directories along a path
+static uint32
+mkdirp_fs(filesystem *fs, uint32 root_nod, const char *path, uint32 fs_timestamp)
+{
+	char *p, *n, *n2 = xstrdup(path);
+	uint32 nod = root_nod;
+	n = n2;
+	while(*n == '/')
+	{
+		nod = EXT2_ROOT_INO;
+		n++;
+	}
+	while(*n)
+	{
+		if((p = strchr(n, '/')))
+			(*p) = 0;
+		uint32 child = find_dir(fs, nod, n);
+		if(!child)
+			child = mkdir_fs(fs, nod, n, FM_IRWXU | FM_IRGRP | FM_IXGRP | FM_IROTH | FM_IXOTH,
+					 0, 0, fs_timestamp, fs_timestamp);
+		nod = child;
+		if(p)
+			n = p + 1;
+		else
+			break;
+	}
+	free(n2);
+	return nod;
+}
+
 // byte swapping for symlinks
 static inline void
 swab32_into(uint32 *dst, uint8 *src, size_t n)
@@ -4243,11 +4273,27 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 		if((pdest = strrchr(fslayers[i].path, ':')))
 		{
 			*(pdest++) = 0;
-			if(fs && !(nod = find_path(fs, EXT2_ROOT_INO, pdest)))
-				error_msg_and_die("path %s not found in filesystem", pdest);
+			if(fs) {
+				nod = find_path(fs, EXT2_ROOT_INO, pdest);
+				if(!nod)
+					nod = mkdirp_fs(fs, EXT2_ROOT_INO, pdest, fs_timestamp);
+			} else if(stats) {
+				/* Account for intermediate directories that
+				   mkdirp_fs will create on the real pass */
+				const char *p = pdest;
+				while(*p == '/') p++;
+				while(*p) {
+					stats->nblocks++;
+					stats->ninodes++;
+					p = strchr(p, '/');
+					if(p) { while(*p == '/') p++; }
+					else break;
+				}
+			}
 		}
 		/* do not compute stats when input is to be read from stdin */
 		if (stats != NULL && strcmp(fslayers[i].path, "-") == 0) {
+			if(pdest) *(pdest-1) = ':';
 			continue;
 		}
 		stat(fslayers[i].path, &st);
@@ -4295,6 +4341,7 @@ populate_fs(filesystem *fs, struct fslayer *fslayers, int nlayers, int squash_ui
 					fclose(fh);
 				break;
 		}
+		if(pdest) *(pdest-1) = ':';
 	}
 }
 
