@@ -111,3 +111,65 @@ ltest ff25a9a4d997f309125f1f042100701b 200 4096 12345678901 device_table_link.tx
 atest 7c4a6bc8b3b74804d5788a133f9cc862 200 1024 H4sIAAAAAAAAA+3WTW6DMBAF4Fn3FD6B8fj3PKAqahQSSwSk9vY1uKssGiJliFretzECJAYeY1s3JM4UKYRlLG7H5ZhdTIHZGevK+ZTYkgrypRFN17EdlKIh5/G3++5d/6N004qbA47er8/fWVduV2aLD7D7/A85C88Ba/ufA/sQIhk25VdA/2+h5t+1gx4/pd7vfv+Hm/ytmfNH/8vr+ql7e3UR8DK6uUx9L/uMtev/3P8p+KX/oyHlZMuqntX/9T34Z9yk9Gco8//xkGWf8Uj+Mbpl/Y+JVJQtq9r5/K+bj3Z474+Xk9wG4JH86/rvyzxAirfYnOw+/+vXWTb+uv9PaV3+JfiSv/WOlJVPf/f5AwAAAAAAAAAAAMD/9A0cPbO/ACgAAA==
 dtest_s 500e2e280ed87569e4ee4df4af617fa7 no 200 1024 0
 dtest_s 500e2e280ed87569e4ee4df4af617fa7 yes 200 1024 0
+
+# Extended attribute tests - skip if setfattr/getfattr not available
+if command -v setfattr >/dev/null 2>&1 && command -v getfattr >/dev/null 2>&1; then
+	echo "Testing extended attributes (xattr) support"
+	gen_setup
+	cd $test_dir
+	echo "hello" > testfile1
+	echo "world" > testfile2
+	mkdir subdir
+	echo "nested" > subdir/nested
+	# set xattrs (user. namespace works without root)
+	setfattr -n user.myattr -v "myvalue" testfile1
+	setfattr -n user.tag -v "important" testfile1
+	setfattr -n user.label -v "data" testfile2
+	setfattr -n user.dirattr -v "dirval" subdir
+	setfattr -n user.deep -v "nested_val" subdir/nested
+	TZ=UTC-11 touch -t 200502070321.43 testfile1 testfile2 subdir/nested subdir .
+	cd ..
+	./genext2fs -B 1024 -N 32 -b 300 -d $test_dir -f -o Linux $test_img
+	# e2fsck must pass cleanly
+	if /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+		echo "  e2fsck: PASS"
+	else
+		echo "  e2fsck: FAIL"
+		exit 1
+	fi
+	# verify individual xattr values via debugfs
+	xattr_pass=true
+	val=$(/usr/sbin/debugfs -R "ea_get -V testfile1 user.myattr" $test_img 2>/dev/null)
+	if [ "$val" = "myvalue" ]; then echo "  user.myattr: PASS"; else echo "  user.myattr: FAIL (got '$val')"; xattr_pass=false; fi
+	val=$(/usr/sbin/debugfs -R "ea_get -V testfile1 user.tag" $test_img 2>/dev/null)
+	if [ "$val" = "important" ]; then echo "  user.tag: PASS"; else echo "  user.tag: FAIL (got '$val')"; xattr_pass=false; fi
+	val=$(/usr/sbin/debugfs -R "ea_get -V testfile2 user.label" $test_img 2>/dev/null)
+	if [ "$val" = "data" ]; then echo "  user.label: PASS"; else echo "  user.label: FAIL (got '$val')"; xattr_pass=false; fi
+	val=$(/usr/sbin/debugfs -R "ea_get -V subdir user.dirattr" $test_img 2>/dev/null)
+	if [ "$val" = "dirval" ]; then echo "  user.dirattr: PASS"; else echo "  user.dirattr: FAIL (got '$val')"; xattr_pass=false; fi
+	val=$(/usr/sbin/debugfs -R "ea_get -V subdir/nested user.deep" $test_img 2>/dev/null)
+	if [ "$val" = "nested_val" ]; then echo "  user.deep: PASS"; else echo "  user.deep: FAIL (got '$val')"; xattr_pass=false; fi
+	if $xattr_pass; then echo "  xattr values: PASS"; else echo "  xattr values: FAIL"; exit 1; fi
+	gen_cleanup
+
+	# Test xattr with auto-size (-b 0) to verify block counting
+	echo "Testing xattr with auto block calculation"
+	gen_setup
+	cd $test_dir
+	for i in $(seq 1 20); do
+		echo "file $i" > "file$i"
+		setfattr -n user.num -v "val$i" "file$i"
+	done
+	TZ=UTC-11 touch -t 200502070321.43 file* .
+	cd ..
+	./genext2fs -B 1024 -N 40 -b 0 -d $test_dir -f -o Linux $test_img
+	if /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+		echo "  auto-size e2fsck: PASS"
+	else
+		echo "  auto-size e2fsck: FAIL"
+		exit 1
+	fi
+	gen_cleanup
+else
+	echo "SKIP xattr tests (setfattr/getfattr not found)"
+fi

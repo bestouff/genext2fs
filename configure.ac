@@ -21,6 +21,7 @@ AC_HEADER_STDC
 AC_HEADER_MAJOR
 AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h memory.h stddef.h stdint.h stdlib.h string.h strings.h unistd.h])
 AC_CHECK_HEADERS([libgen.h getopt.h])
+AC_CHECK_HEADERS([sys/xattr.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
@@ -31,7 +32,7 @@ AC_CHECK_TYPE(ssize_t, signed)
 AC_CHECK_MEMBERS([struct stat.st_rdev])
 
 # Checks for library functions.
-AC_CHECK_FUNCS([getopt_long getline strtof])
+AC_CHECK_FUNCS([getopt_long getline strtof llistxattr lgetxattr])
 AX_FUNC_SNPRINTF
 AC_FUNC_SCANF_CAN_MALLOC
 

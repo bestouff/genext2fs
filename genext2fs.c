@@ -154,6 +154,10 @@
 #include <locale.h>
 #endif
 
+#if HAVE_LLISTXATTR
+#include <sys/xattr.h>
+#endif
+
 #include "cache.h"
 
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -591,6 +595,45 @@ is_blk_empty(uint8 *b)
 #define EXT2_GOOD_OLD_INODE_SIZE 128
 #define EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT2_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
+#define EXT2_FEATURE_COMPAT_EXT_ATTR		0x0008
+
+// extended attributes on-disk structures
+
+#define EXT2_XATTR_MAGIC	0xEA020000
+#define EXT2_XATTR_PAD		4
+#define EXT2_XATTR_ROUND	(EXT2_XATTR_PAD - 1)
+#define EXT2_XATTR_LEN(name_len) \
+	(((name_len) + EXT2_XATTR_ROUND + \
+	sizeof(struct ext2_xattr_entry)) & ~EXT2_XATTR_ROUND)
+#define EXT2_XATTR_SIZE(size) \
+	(((size) + EXT2_XATTR_ROUND) & ~EXT2_XATTR_ROUND)
+#define EXT2_XATTR_NEXT(entry) \
+	((struct ext2_xattr_entry *)((uint8 *)(entry) + EXT2_XATTR_LEN((entry)->e_name_len)))
+
+// xattr name index values
+#define EXT2_XATTR_INDEX_USER			1
+#define EXT2_XATTR_INDEX_POSIX_ACL_ACCESS	2
+#define EXT2_XATTR_INDEX_POSIX_ACL_DEFAULT	3
+#define EXT2_XATTR_INDEX_TRUSTED		4
+#define EXT2_XATTR_INDEX_SECURITY		6
+
+struct ext2_xattr_header {
+	uint32 h_magic;
+	uint32 h_refcount;
+	uint32 h_blocks;
+	uint32 h_hash;
+	uint32 h_reserved[4];
+};
+
+struct ext2_xattr_entry {
+	uint8  e_name_len;
+	uint8  e_name_index;
+	uint16 e_value_offs;
+	uint32 e_value_block;
+	uint32 e_value_size;
+	uint32 e_hash;
+	char   e_name[0];
+};
 
 #define groupdescriptor_decl \
 	udecl32(bg_block_bitmap)       /* Block number of the block bitmap */ \
@@ -786,6 +829,27 @@ swap_block(block b)
 	uint32 *blk = (uint32*)b;
 	for(i = 0; i < BLOCKSIZE/4; i++)
 		blk[i] = swab32(blk[i]);
+}
+
+static void
+swap_xattr(block b)
+{
+	struct ext2_xattr_header *hdr = (struct ext2_xattr_header *)b;
+	struct ext2_xattr_entry *entry;
+
+	hdr->h_magic = swab32(hdr->h_magic);
+	hdr->h_refcount = swab32(hdr->h_refcount);
+	hdr->h_blocks = swab32(hdr->h_blocks);
+	hdr->h_hash = swab32(hdr->h_hash);
+
+	entry = (struct ext2_xattr_entry *)(hdr + 1);
+	while ((uint8 *)entry < b + BLOCKSIZE && entry->e_name_len) {
+		entry->e_value_offs = swab16(entry->e_value_offs);
+		entry->e_value_block = swab32(entry->e_value_block);
+		entry->e_value_size = swab32(entry->e_value_size);
+		entry->e_hash = swab32(entry->e_hash);
+		entry = EXT2_XATTR_NEXT(entry);
+	}
 }
 
 #undef decl8
@@ -2121,6 +2185,239 @@ fs_upgrade_rev1_largefile(filesystem *fs)
 	fs->sb->s_inode_size = EXT2_GOOD_OLD_INODE_SIZE;
 }
 
+// extended attribute support
+
+struct xattr_item {
+	const char *name;
+	const void *value;
+	uint32 value_len;
+};
+
+// Compare xattr items for sorting: by (name_index, name_len, name)
+static int
+xattr_item_cmp(const void *a, const void *b)
+{
+	const struct xattr_item *ia = a;
+	const struct xattr_item *ib = b;
+	uint8 idx_a, idx_b;
+	const char *suffix_a, *suffix_b;
+	uint8 len_a, len_b;
+	int r;
+
+	// Parse name index for a
+	if (strncmp(ia->name, "user.", 5) == 0)
+		{ idx_a = EXT2_XATTR_INDEX_USER; suffix_a = ia->name + 5; }
+	else if (strcmp(ia->name, "system.posix_acl_access") == 0)
+		{ idx_a = EXT2_XATTR_INDEX_POSIX_ACL_ACCESS; suffix_a = ""; }
+	else if (strcmp(ia->name, "system.posix_acl_default") == 0)
+		{ idx_a = EXT2_XATTR_INDEX_POSIX_ACL_DEFAULT; suffix_a = ""; }
+	else if (strncmp(ia->name, "trusted.", 8) == 0)
+		{ idx_a = EXT2_XATTR_INDEX_TRUSTED; suffix_a = ia->name + 8; }
+	else if (strncmp(ia->name, "security.", 9) == 0)
+		{ idx_a = EXT2_XATTR_INDEX_SECURITY; suffix_a = ia->name + 9; }
+	else
+		{ idx_a = 0; suffix_a = ia->name; }
+
+	// Parse name index for b
+	if (strncmp(ib->name, "user.", 5) == 0)
+		{ idx_b = EXT2_XATTR_INDEX_USER; suffix_b = ib->name + 5; }
+	else if (strcmp(ib->name, "system.posix_acl_access") == 0)
+		{ idx_b = EXT2_XATTR_INDEX_POSIX_ACL_ACCESS; suffix_b = ""; }
+	else if (strcmp(ib->name, "system.posix_acl_default") == 0)
+		{ idx_b = EXT2_XATTR_INDEX_POSIX_ACL_DEFAULT; suffix_b = ""; }
+	else if (strncmp(ib->name, "trusted.", 8) == 0)
+		{ idx_b = EXT2_XATTR_INDEX_TRUSTED; suffix_b = ib->name + 8; }
+	else if (strncmp(ib->name, "security.", 9) == 0)
+		{ idx_b = EXT2_XATTR_INDEX_SECURITY; suffix_b = ib->name + 9; }
+	else
+		{ idx_b = 0; suffix_b = ib->name; }
+
+	if (idx_a != idx_b)
+		return (int)idx_a - (int)idx_b;
+	len_a = strlen(suffix_a);
+	len_b = strlen(suffix_b);
+	if (len_a != len_b)
+		return (int)len_a - (int)len_b;
+	r = memcmp(suffix_a, suffix_b, len_a);
+	return r;
+}
+
+// Parse an xattr full name into name_index and suffix.
+// Returns 0 on success, -1 if the prefix is not recognized.
+static int
+xattr_parse_name(const char *full_name, uint8 *name_index, const char **suffix)
+{
+	if (strncmp(full_name, "user.", 5) == 0)
+		{ *name_index = EXT2_XATTR_INDEX_USER; *suffix = full_name + 5; }
+	else if (strcmp(full_name, "system.posix_acl_access") == 0)
+		{ *name_index = EXT2_XATTR_INDEX_POSIX_ACL_ACCESS; *suffix = ""; }
+	else if (strcmp(full_name, "system.posix_acl_default") == 0)
+		{ *name_index = EXT2_XATTR_INDEX_POSIX_ACL_DEFAULT; *suffix = ""; }
+	else if (strncmp(full_name, "trusted.", 8) == 0)
+		{ *name_index = EXT2_XATTR_INDEX_TRUSTED; *suffix = full_name + 8; }
+	else if (strncmp(full_name, "security.", 9) == 0)
+		{ *name_index = EXT2_XATTR_INDEX_SECURITY; *suffix = full_name + 9; }
+	else
+		return -1;
+	return 0;
+}
+
+#define XATTR_NAME_HASH_SHIFT 5
+#define XATTR_VALUE_HASH_SHIFT 16
+#define XATTR_BLOCK_HASH_SHIFT 16
+
+// Compute the hash of a single xattr entry (matching kernel algorithm).
+// The block must be in host byte order, and values are raw bytes
+// treated as little-endian uint32 words.
+static uint32
+xattr_entry_hash(struct ext2_xattr_header *hdr, struct ext2_xattr_entry *entry)
+{
+	uint32 hash = 0;
+	char *name = entry->e_name;
+	int n;
+
+	for (n = 0; n < entry->e_name_len; n++) {
+		hash = (hash << XATTR_NAME_HASH_SHIFT) ^
+		       (hash >> (8*sizeof(hash) - XATTR_NAME_HASH_SHIFT)) ^
+		       (uint8)*name++;
+	}
+
+	if (entry->e_value_block == 0 && entry->e_value_size != 0) {
+		uint8 *value = (uint8 *)hdr + entry->e_value_offs;
+		int val_words = (entry->e_value_size + EXT2_XATTR_ROUND)
+				>> 2; // EXT2_XATTR_PAD_BITS = 2
+		for (n = 0; n < val_words; n++) {
+			// read as little-endian uint32 (matching kernel)
+			uint32 w = (uint32)value[0]
+				| ((uint32)value[1] << 8)
+				| ((uint32)value[2] << 16)
+				| ((uint32)value[3] << 24);
+			hash = (hash << XATTR_VALUE_HASH_SHIFT) ^
+			       (hash >> (8*sizeof(hash) - XATTR_VALUE_HASH_SHIFT)) ^
+			       w;
+			value += 4;
+		}
+	}
+	return hash;
+}
+
+// Compute the block-level hash from all entry hashes.
+static uint32
+xattr_block_hash(struct ext2_xattr_header *hdr)
+{
+	struct ext2_xattr_entry *entry = (struct ext2_xattr_entry *)(hdr + 1);
+	uint32 hash = 0;
+
+	while (*(uint32 *)entry != 0) { // not IS_LAST_ENTRY sentinel
+		if (entry->e_hash == 0) {
+			hash = 0;
+			break;
+		}
+		hash = (hash << XATTR_BLOCK_HASH_SHIFT) ^
+		       (hash >> (8*sizeof(hash) - XATTR_BLOCK_HASH_SHIFT)) ^
+		       entry->e_hash;
+		entry = EXT2_XATTR_NEXT(entry);
+	}
+	return hash;
+}
+
+#undef XATTR_NAME_HASH_SHIFT
+#undef XATTR_VALUE_HASH_SHIFT
+#undef XATTR_BLOCK_HASH_SHIFT
+
+// Set extended attributes on an inode.
+// items: array of xattr name/value pairs, count: number of items.
+// The inode must already exist. Allocates one block for the xattr data.
+static void
+set_xattrs(filesystem *fs, uint32 nod, struct xattr_item *items, int count)
+{
+	uint32 blk;
+	uint8 *b;
+	blk_info *bi;
+	inode *node;
+	nod_info *ni;
+	struct ext2_xattr_header *hdr;
+	struct ext2_xattr_entry *entry;
+	uint32 value_offset; // offset from start of block, grows downward
+	int i;
+
+	if (count == 0)
+		return;
+
+	// Sort items by (name_index, name_len, name)
+	qsort(items, count, sizeof(struct xattr_item), xattr_item_cmp);
+
+	// Allocate a block for xattrs
+	blk = alloc_blk(fs, nod);
+	b = get_blk(fs, blk, &bi);
+	memset(b, 0, BLOCKSIZE);
+
+	// Fill header
+	hdr = (struct ext2_xattr_header *)b;
+	hdr->h_magic = EXT2_XATTR_MAGIC;
+	hdr->h_refcount = 1;
+	hdr->h_blocks = 1;
+	hdr->h_hash = 0;
+
+	// Entries grow forward from after header, values grow backward from end
+	entry = (struct ext2_xattr_entry *)(hdr + 1);
+	value_offset = BLOCKSIZE;
+
+	for (i = 0; i < count; i++) {
+		uint8 name_index;
+		const char *suffix;
+		uint8 name_len;
+		uint32 val_size;
+
+		if (xattr_parse_name(items[i].name, &name_index, &suffix) < 0) {
+			error_msg("unsupported xattr prefix: %s (skipping)", items[i].name);
+			continue;
+		}
+		name_len = strlen(suffix);
+		val_size = items[i].value_len;
+
+		// Check space: entry grows forward, value grows backward
+		value_offset -= EXT2_XATTR_SIZE(val_size);
+		if ((uint8 *)entry + EXT2_XATTR_LEN(name_len) + 4 > b + value_offset) {
+			error_msg("xattr block full, skipping %s", items[i].name);
+			value_offset += EXT2_XATTR_SIZE(val_size);
+			continue;
+		}
+
+		entry->e_name_len = name_len;
+		entry->e_name_index = name_index;
+		entry->e_value_offs = value_offset;
+		entry->e_value_block = 0;
+		entry->e_value_size = val_size;
+		entry->e_hash = 0;
+		memcpy(entry->e_name, suffix, name_len);
+
+		// Write value at the end of block
+		memcpy(b + value_offset, items[i].value, val_size);
+
+		// Compute per-entry hash
+		entry->e_hash = xattr_entry_hash(hdr, entry);
+
+		entry = EXT2_XATTR_NEXT(entry);
+	}
+
+	// Compute block hash from all entry hashes
+	hdr->h_hash = xattr_block_hash(hdr);
+
+	if (fs->swapit)
+		swap_xattr(b);
+	put_blk(bi);
+
+	// Set i_file_acl on the inode
+	node = get_nod(fs, nod, &ni);
+	node->i_file_acl = blk;
+	node->i_blocks += INOBLK;
+	put_nod(ni);
+
+	// Set the compat feature flag
+	fs->sb->s_feature_compat |= EXT2_FEATURE_COMPAT_EXT_ATTR;
+}
+
 #define COPY_BLOCKS 16
 #define CB_SIZE (COPY_BLOCKS * BLOCKSIZE)
 
@@ -2619,6 +2916,8 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					if(filesize >= 4 * (EXT2_TIND_BLOCK+1))
 						stats->nblocks += (filesize + BLOCKSIZE - 1) / BLOCKSIZE;
 					stats->ninodes++;
+					if(archive_entry_xattr_count(entry) > 0)
+						stats->nblocks++;
 					break;
 				case S_IFREG:
 				{
@@ -2632,10 +2931,14 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 				case S_IFIFO:
 				case S_IFSOCK:
 					stats->ninodes++;
+					if(archive_entry_xattr_count(entry) > 0)
+						stats->nblocks++;
 					break;
 				case S_IFDIR:
 					stats->ninodes++;
 					stats->nblocks++; // each directory uses at least 1 block
+					if(archive_entry_xattr_count(entry) > 0)
+						stats->nblocks++;
 					break;
 				default:
 					break;
@@ -2662,30 +2965,31 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 			// FIXME: if the entry is a regular file, update
 			// content
 		else {
+			uint32 entry_nod = 0;
 			ctime = archive_entry_ctime(entry);
 			mtime = archive_entry_mtime(entry);
 			switch(mode & S_IFMT)
 			{
 #if HAVE_STRUCT_STAT_ST_RDEV
 				case S_IFCHR:
-					mknod_fs(fs, nod, name, mode|FM_IFCHR, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
+					entry_nod = mknod_fs(fs, nod, name, mode|FM_IFCHR, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
 					break;
 				case S_IFBLK:
-					mknod_fs(fs, nod, name, mode|FM_IFBLK, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
+					entry_nod = mknod_fs(fs, nod, name, mode|FM_IFBLK, uid, gid, major(archive_entry_rdev(entry)), minor(archive_entry_rdev(entry)), ctime, mtime);
 					break;
 #endif
 				case S_IFIFO:
-					mknod_fs(fs, nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
+					entry_nod = mknod_fs(fs, nod, name, mode|FM_IFIFO, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFSOCK:
-					mknod_fs(fs, nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
+					entry_nod = mknod_fs(fs, nod, name, mode|FM_IFSOCK, uid, gid, 0, 0, ctime, mtime);
 					break;
 				case S_IFLNK:
 					lnk = calloc(1, rndup(strlen(archive_entry_symlink(entry)), BLOCKSIZE));
 					strcpy(lnk, archive_entry_symlink(entry));
 					if (lnk == NULL)
 						error_msg_and_die(memory_exhausted);
-					mklink_fs(fs, nod, name, strlen(archive_entry_symlink(entry)), (uint8*)lnk, uid, gid, ctime, mtime);
+					entry_nod = mklink_fs(fs, nod, name, strlen(archive_entry_symlink(entry)), (uint8*)lnk, uid, gid, ctime, mtime);
 					free(lnk);
 					break;
 				case S_IFREG:
@@ -2694,10 +2998,10 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					// us and the archive does not
 					// necessarily contain the file size
 					// in the first place
-					mkfile_fs(fs, nod, name, mode, la_read, a, 0, uid, gid, ctime, mtime);
+					entry_nod = mkfile_fs(fs, nod, name, mode, la_read, a, 0, uid, gid, ctime, mtime);
 					break;
 				case S_IFDIR:
-					mkdir_fs(fs, nod, name, mode, uid, gid, ctime, mtime);
+					entry_nod = mkdir_fs(fs, nod, name, mode, uid, gid, ctime, mtime);
 					break;
 				default:
 					// probably a hardlink
@@ -2708,6 +3012,24 @@ add2fs_from_tarball(filesystem *fs, uint32 this_nod, FILE * fh, int squash_uids,
 					} else {
 						error_msg("ignoring entry %s with mode %d", archive_entry_pathname(entry), mode & S_IFMT);
 					}
+			}
+			// set extended attributes from the archive entry
+			if (entry_nod && archive_entry_xattr_count(entry) > 0) {
+				int xcount = archive_entry_xattr_count(entry);
+				struct xattr_item *xitems = calloc(xcount, sizeof(struct xattr_item));
+				int xi = 0;
+				if (!xitems)
+					error_msg_and_die(memory_exhausted);
+				archive_entry_xattr_reset(entry);
+				while (archive_entry_xattr_next(entry,
+					(const char **)&xitems[xi].name,
+					(const void **)&xitems[xi].value,
+					(size_t *)&xitems[xi].value_len) == ARCHIVE_OK) {
+					xi++;
+				}
+				if (xi > 0)
+					set_xattrs(fs, entry_nod, xitems, xi);
+				free(xitems);
 			}
 		}
 		free(path2);
@@ -2929,6 +3251,10 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					if(st.st_size >= 4 * (EXT2_TIND_BLOCK+1))
 						stats->nblocks += (st.st_size + BLOCKSIZE - 1) / BLOCKSIZE;
 					stats->ninodes++;
+#if HAVE_LLISTXATTR
+					if(llistxattr(dent->d_name, NULL, 0) > 0)
+						stats->nblocks++;
+#endif
 					break;
 				case S_IFREG:
 				{
@@ -2943,10 +3269,18 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				case S_IFIFO:
 				case S_IFSOCK:
 					stats->ninodes++;
+#if HAVE_LLISTXATTR
+					if(llistxattr(dent->d_name, NULL, 0) > 0)
+						stats->nblocks++;
+#endif
 					break;
 				case S_IFDIR:
 					stats->ninodes++;
 					stats->nblocks++; // each directory uses at least 1 block
+#if HAVE_LLISTXATTR
+					if(llistxattr(dent->d_name, NULL, 0) > 0)
+						stats->nblocks++;
+#endif
 					if(chdir(dent->d_name) < 0)
 						perror_msg_and_die(dent->d_name);
 					add2fs_from_dir(fs, this_nod, squash_uids, squash_perms, fs_timestamp, stats);
@@ -3003,7 +3337,7 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 					if (lnk == NULL)
 						error_msg_and_die(memory_exhausted);
 					if (readlink(dent->d_name, lnk, st.st_size) > 0)
-						mklink_fs(fs, this_nod, name, st.st_size, (uint8*)lnk, uid, gid, ctime, mtime);
+						nod = mklink_fs(fs, this_nod, name, st.st_size, (uint8*)lnk, uid, gid, ctime, mtime);
 					else
 						error_msg("readlink: %s", dent->d_name);
 					free(lnk);
@@ -3044,6 +3378,60 @@ add2fs_from_dir(filesystem *fs, uint32 this_nod, int squash_uids, int squash_per
 				fs->hdlinks.hdl[fs->hdlinks.count].dst_nod = nod;
 				fs->hdlinks.count++;
 			}
+#if HAVE_LLISTXATTR
+			// read and set xattrs from host file
+			if (nod) {
+				ssize_t xlist_size = llistxattr(dent->d_name, NULL, 0);
+				if (xlist_size > 0) {
+					char *xlist = malloc(xlist_size);
+					if (!xlist)
+						error_msg_and_die(memory_exhausted);
+					xlist_size = llistxattr(dent->d_name, xlist, xlist_size);
+					if (xlist_size > 0) {
+						int xcount = 0;
+						char *p;
+						struct xattr_item *xitems;
+						int xi;
+
+						// count xattrs
+						for (p = xlist; p < xlist + xlist_size; p += strlen(p) + 1)
+							xcount++;
+						xitems = calloc(xcount, sizeof(struct xattr_item));
+						if (!xitems)
+							error_msg_and_die(memory_exhausted);
+
+						// read each xattr value
+						xi = 0;
+						for (p = xlist; p < xlist + xlist_size; p += strlen(p) + 1) {
+							ssize_t val_size = lgetxattr(dent->d_name, p, NULL, 0);
+							if (val_size < 0)
+								continue;
+							xitems[xi].name = p;
+							if (val_size > 0) {
+								void *val = malloc(val_size);
+								if (!val)
+									error_msg_and_die(memory_exhausted);
+								if (lgetxattr(dent->d_name, p, val, val_size) != val_size) {
+									free(val);
+									continue;
+								}
+								xitems[xi].value = val;
+							} else {
+								xitems[xi].value = NULL;
+							}
+							xitems[xi].value_len = val_size;
+							xi++;
+						}
+						if (xi > 0)
+							set_xattrs(fs, nod, xitems, xi);
+						{ int j; for (j = 0; j < xi; j++)
+							free((void *)xitems[j].value); }
+						free(xitems);
+					}
+					free(xlist);
+				}
+			}
+#endif
 		}
 		free(dent);
 	}
@@ -3401,7 +3789,8 @@ load_fs(FILE *fh, int swapit, char *fname)
 			error_msg_and_die("First inode incompatible");
 		if (fs->sb->s_inode_size != EXT2_GOOD_OLD_INODE_SIZE)
 			error_msg_and_die("inode size incompatible");
-		if (fs->sb->s_feature_compat)
+		if (fs->sb->s_feature_compat
+		    & ~EXT2_FEATURE_COMPAT_EXT_ATTR)
 			error_msg_and_die("Unsupported compat features");
 		if (fs->sb->s_feature_incompat)
 			error_msg_and_die("Unsupported incompat features");
@@ -4124,7 +4513,7 @@ main(int argc, char **argv)
 		/* Add reserved inodes (EXT2_FIRST_INO - 1 = 10 reserved inodes) */
 		stats.ninodes += EXT2_FIRST_INO - 1;
 
-		if(nbblocks == -1)
+		if(nbblocks <= 0)
 		{
 			/* On filesystems with 1k block size, the bootloader area uses a full
 			 * block. For 2048 and up, the superblock can be fitted into block 0.
