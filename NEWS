@@ -1,5 +1,0 @@
-This is the 1.4.2 release:
-
-	- fixed: Endless loop with --verbose for large images
-
-Please report bugs to https://github.com/bestouff/genext2fs/issues
