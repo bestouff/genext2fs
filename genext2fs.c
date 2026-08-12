@@ -352,7 +352,7 @@ static uint32 blocksize = 1024;
 	( (nod) - GRP_GROUP_OF_INODE((fs),(nod))*(fs)->sb->s_inodes_per_group )
 
 // Given a block number find the group it belongs to
-#define GRP_GROUP_OF_BLOCK(fs,blk) ( ((blk)-1) / (fs)->sb->s_blocks_per_group)
+#define GRP_GROUP_OF_BLOCK(fs,blk) ( ((blk)-(fs)->sb->s_first_data_block) / (fs)->sb->s_blocks_per_group)
 	
 //Given a block number get/put the block bitmap that covers it
 #define GRP_GET_BLOCK_BITMAP(fs,blk,bi,gi)				\
@@ -362,7 +362,7 @@ static uint32 blocksize = 1024;
 
 //Given a block number find its offset within the block bitmap that covers it
 #define GRP_BBM_OFFSET(fs,blk) \
-	( (blk) - GRP_GROUP_OF_BLOCK((fs),(blk))*(fs)->sb->s_blocks_per_group )
+	( ((blk)-(fs)->sb->s_first_data_block) % (fs)->sb->s_blocks_per_group + 1 )
 
 // Does this block group have a superblock+GDT backup?
 // With sparse_super: group 0, 1, and powers of 3, 5, 7.
@@ -1545,10 +1545,11 @@ free_blk(filesystem *fs, uint32 bk)
 	gd_info *gi;
 	groupdescriptor *gd;
 
+	bk -= fs->sb->s_first_data_block;
 	grp = bk / fs->sb->s_blocks_per_group;
 	bk %= fs->sb->s_blocks_per_group;
 	gd = get_gd(fs, grp, &gi);
-	deallocate(GRP_GET_GROUP_BBM(fs, gd, &bi), bk);
+	deallocate(GRP_GET_GROUP_BBM(fs, gd, &bi), bk + 1);
 	GRP_PUT_GROUP_BBM(bi);
 	gd->bg_free_blocks_count++;
 	put_gd(gi);
@@ -1785,7 +1786,7 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		if(extend) // allocate first indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free first indirect block
-			free_blk(fs, b[bw->bpind]);
+			free_blk(fs, b[bw->bpdind]);
 		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
@@ -1824,7 +1825,7 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
-			free_blk(fs, b[bw->bpind]);
+			free_blk(fs, b[bw->bpdind]);
 		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first data block
@@ -1851,7 +1852,7 @@ walk_bw(filesystem *fs, uint32 nod, blockwalker *bw, int32 *create, uint32 hole)
 		if(extend) // allocate single indirect block
 			b[bw->bpdind] = alloc_blk(fs,nod);
 		if(reduce) // free indirect block
-			free_blk(fs, b[bw->bpind]);
+			free_blk(fs, b[bw->bpdind]);
 		b = get_blkmap(fs, b[bw->bpdind], &bmi3);
 		bkref = &b[bw->bptind];
 		if(extend) // allocate first block
