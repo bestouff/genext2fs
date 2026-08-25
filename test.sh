@@ -405,3 +405,29 @@ else
 fi
 $pass && echo "PASS" || { echo "FAIL"; exit 1; }
 gen_cleanup
+
+# ---- Block sizes 2048/4096 (-B) ----
+# Exercises the corrected GRP_GROUP_OF_BLOCK/GRP_BBM_OFFSET macros and
+# free_blk for filesystems where s_first_data_block == 0.
+echo "Testing block sizes 2048 and 4096 (-B)"
+for blocksz in 2048 4096; do
+	gen_setup
+	mkdir -p $test_dir/subdir
+	echo "hello $blocksz" > $test_dir/file1.txt
+	echo "world $blocksz" > $test_dir/subdir/file2.txt
+	TZ=UTC-11 touch -t 200502070321.43 $test_dir/file1.txt $test_dir/subdir/file2.txt $test_dir/subdir $test_dir
+	./genext2fs -B $blocksz -N 32 -b 200 -d $test_dir -f -o Linux $test_img
+	pass=true
+	if ! /usr/sbin/e2fsck -fn $test_img > /dev/null 2>&1; then
+		echo "  -B $blocksz e2fsck: FAIL"; pass=false
+	fi
+	v1=$(/usr/sbin/debugfs -R "cat file1.txt" $test_img 2>/dev/null)
+	v2=$(/usr/sbin/debugfs -R "cat subdir/file2.txt" $test_img 2>/dev/null)
+	if [ "$v1" = "hello $blocksz" ] && [ "$v2" = "world $blocksz" ]; then
+		echo "  -B $blocksz contents: PASS"
+	else
+		echo "  -B $blocksz contents: FAIL (got '$v1' / '$v2')"; pass=false
+	fi
+	$pass && echo "-B $blocksz: PASS" || { echo "-B $blocksz: FAIL"; exit 1; }
+	gen_cleanup
+done
